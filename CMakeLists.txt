@@ -12,6 +12,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_executable(jobq
     src/main.cpp
     src/job/Job.cpp
+    src/queue/JobQueue.cpp
 )
 
 target_include_directories(jobq
