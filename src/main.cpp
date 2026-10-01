@@ -1,4 +1,7 @@
+#include <cstdint>
 #include <iostream>
+#include <thread>
+#include <vector>
 
 #include "job/Job.h"
 #include "queue/JobQueue.h"
@@ -6,54 +9,52 @@
 int main() {
     jobq::JobQueue queue;
 
-    queue.push(
-        jobq::Job(
-            1001,
-            "REPORT",
-            "monthly-report"
-        )
-    );
+    constexpr int producerCount = 4;
+    constexpr int jobsPerProducer = 100;
 
-    queue.push(
-        jobq::Job(
-            1002,
-            "EMAIL",
-            "welcome-email"
-        )
-    );
+    std::vector<std::thread> producers;
+    producers.reserve(producerCount);
 
-    std::cout << "Queue size: "
-              << queue.size()
-              << '\n';
+    for (int producer = 0; producer < producerCount; ++producer) {
+        producers.emplace_back([&queue, producer]() {
+            for (int i = 0; i < jobsPerProducer; ++i) {
+                const auto id =
+                    static_cast<std::uint64_t>(producer * 1000 + i);
 
-    auto firstJob = queue.tryPop();
-
-    if (firstJob.has_value()) {
-        std::cout << "Popped Job ID: "
-                  << firstJob->getId()
-                  << '\n';
-
-        std::cout << "Type: "
-                  << firstJob->getType()
-                  << '\n';
+                queue.push(
+                    jobq::Job(
+                        id,
+                        "TEST",
+                        "producer-job"
+                    )
+                );
+            }
+        });
     }
 
-    std::cout << "Queue size after pop: "
-              << queue.size()
-              << '\n';
-
-    auto secondJob = queue.tryPop();
-
-    if (secondJob.has_value()) {
-        std::cout << "Popped Job ID: "
-                  << secondJob->getId()
-                  << '\n';
+    for (auto& producer : producers) {
+        producer.join();
     }
 
-    std::cout << "Queue empty: "
-              << std::boolalpha
-              << queue.empty()
+    const auto expectedJobs =
+        producerCount * jobsPerProducer;
+
+    const auto actualJobs =
+        queue.size();
+
+    std::cout << "Expected jobs: "
+              << expectedJobs
               << '\n';
+
+    std::cout << "Jobs in queue: "
+              << actualJobs
+              << '\n';
+
+    if (actualJobs == static_cast<std::size_t>(expectedJobs)) {
+        std::cout << "Concurrency test: PASS\n";
+    } else {
+        std::cout << "Concurrency test: FAIL\n";
+    }
 
     return 0;
 }
