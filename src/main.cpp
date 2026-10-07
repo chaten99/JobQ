@@ -1,60 +1,125 @@
-#include <cstdint>
+#include <chrono>
 #include <iostream>
 #include <thread>
-#include <vector>
 
+#include "executor/JobExecutor.h"
 #include "job/Job.h"
 #include "queue/JobQueue.h"
+#include "worker/WorkerPool.h"
 
 int main() {
     jobq::JobQueue queue;
+    jobq::JobExecutor executor;
 
-    constexpr int producerCount = 4;
-    constexpr int jobsPerProducer = 100;
+    executor.registerHandler(
+        "REPORT",
+        [](const jobq::Job& job) {
+            std::this_thread::sleep_for(
+                std::chrono::milliseconds(500)
+            );
 
-    std::vector<std::thread> producers;
-    producers.reserve(producerCount);
+            std::cout
+                << "    Processing REPORT: "
+                << job.getPayload()
+                << '\n';
+        }
+    );
 
-    for (int producer = 0; producer < producerCount; ++producer) {
-        producers.emplace_back([&queue, producer]() {
-            for (int i = 0; i < jobsPerProducer; ++i) {
-                const auto id =
-                    static_cast<std::uint64_t>(producer * 1000 + i);
+    executor.registerHandler(
+        "EMAIL",
+        [](const jobq::Job& job) {
+            std::this_thread::sleep_for(
+                std::chrono::milliseconds(300)
+            );
 
-                queue.push(
-                    jobq::Job(
-                        id,
-                        "TEST",
-                        "producer-job"
-                    )
-                );
-            }
-        });
-    }
+            std::cout
+                << "    Sending EMAIL: "
+                << job.getPayload()
+                << '\n';
+        }
+    );
 
-    for (auto& producer : producers) {
-        producer.join();
-    }
+    executor.registerHandler(
+        "CALCULATE",
+        [](const jobq::Job& job) {
+            std::this_thread::sleep_for(
+                std::chrono::milliseconds(200)
+            );
 
-    const auto expectedJobs =
-        producerCount * jobsPerProducer;
+            std::cout
+                << "    Running CALCULATION: "
+                << job.getPayload()
+                << '\n';
+        }
+    );
 
-    const auto actualJobs =
-        queue.size();
+    jobq::WorkerPool pool(
+        queue,
+        executor,
+        3
+    );
 
-    std::cout << "Expected jobs: "
-              << expectedJobs
-              << '\n';
+    std::cout
+        << "Starting JobQ with "
+        << pool.size()
+        << " workers...\n";
 
-    std::cout << "Jobs in queue: "
-              << actualJobs
-              << '\n';
+    pool.start();
 
-    if (actualJobs == static_cast<std::size_t>(expectedJobs)) {
-        std::cout << "Concurrency test: PASS\n";
-    } else {
-        std::cout << "Concurrency test: FAIL\n";
-    }
+    queue.push(
+        jobq::Job(
+            1001,
+            "REPORT",
+            "monthly-report"
+        )
+    );
+
+    queue.push(
+        jobq::Job(
+            1002,
+            "EMAIL",
+            "welcome-email"
+        )
+    );
+
+    queue.push(
+        jobq::Job(
+            1003,
+            "CALCULATE",
+            "sum-1000000"
+        )
+    );
+
+    queue.push(
+        jobq::Job(
+            1004,
+            "REPORT",
+            "sales-report"
+        )
+    );
+
+    queue.push(
+        jobq::Job(
+            1005,
+            "EMAIL",
+            "notification-email"
+        )
+    );
+
+    queue.push(
+        jobq::Job(
+            1006,
+            "CALCULATE",
+            "analytics"
+        )
+    );
+
+    std::cout << "Submitted 6 jobs.\n";
+
+    pool.stop();
+
+    std::cout
+        << "JobQ stopped cleanly.\n";
 
     return 0;
 }
