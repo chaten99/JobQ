@@ -1,10 +1,12 @@
 #include "queue/JobQueue.h"
 
-#include <utility>
-
 namespace jobq {
 
-bool JobQueue::push(Job job) {
+bool JobQueue::push(std::shared_ptr<Job> job) {
+    if (!job) {
+        return false;
+    }
+
     {
         std::lock_guard<std::mutex> lock(mutex_);
 
@@ -19,20 +21,20 @@ bool JobQueue::push(Job job) {
     return true;
 }
 
-std::optional<Job> JobQueue::tryPop() {
+std::shared_ptr<Job> JobQueue::tryPop() {
     std::lock_guard<std::mutex> lock(mutex_);
 
     if (jobs_.empty()) {
-        return std::nullopt;
+        return nullptr;
     }
 
-    Job job = std::move(jobs_.front());
+    auto job = std::move(jobs_.front());
     jobs_.pop();
 
     return job;
 }
 
-std::optional<Job> JobQueue::waitAndPop() {
+std::shared_ptr<Job> JobQueue::waitAndPop() {
     std::unique_lock<std::mutex> lock(mutex_);
 
     condition_.wait(lock, [this] {
@@ -40,10 +42,10 @@ std::optional<Job> JobQueue::waitAndPop() {
     });
 
     if (jobs_.empty()) {
-        return std::nullopt;
+        return nullptr;
     }
 
-    Job job = std::move(jobs_.front());
+    auto job = std::move(jobs_.front());
     jobs_.pop();
 
     return job;

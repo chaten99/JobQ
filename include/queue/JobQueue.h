@@ -2,8 +2,8 @@
 
 #include <condition_variable>
 #include <cstddef>
+#include <memory>
 #include <mutex>
-#include <optional>
 #include <queue>
 
 #include "job/Job.h"
@@ -18,11 +18,11 @@ public:
     JobQueue(const JobQueue&) = delete;
     JobQueue& operator=(const JobQueue&) = delete;
 
-    bool push(Job job);
+    bool push(std::shared_ptr<Job> job);
 
-    std::optional<Job> tryPop();
+    std::shared_ptr<Job> tryPop();
 
-    std::optional<Job> waitAndPop();
+    std::shared_ptr<Job> waitAndPop();
 
     void close();
 
@@ -33,7 +33,7 @@ public:
     std::size_t size() const;
 
 private:
-    std::queue<Job> jobs_;
+    std::queue<std::shared_ptr<Job>> jobs_;
 
     mutable std::mutex mutex_;
     std::condition_variable condition_;
