@@ -30,3 +30,23 @@ target_link_libraries(jobq
     PRIVATE
         Threads::Threads
 )
+
+add_executable(jobq_stress_test
+    examples/stress_test.cpp
+
+    src/job/Job.cpp
+    src/queue/JobQueue.cpp
+    src/executor/JobExecutor.cpp
+    src/worker/Worker.cpp
+    src/worker/WorkerPool.cpp
+)
+
+target_include_directories(jobq_stress_test
+    PRIVATE
+        ${PROJECT_SOURCE_DIR}/include
+)
+
+target_link_libraries(jobq_stress_test
+    PRIVATE
+        Threads::Threads
+)
