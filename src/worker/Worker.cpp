@@ -36,22 +36,20 @@ void Worker::run() {
     while (true) {
         auto job = queue_.waitAndPop();
 
-        if (!job.has_value()) {
+        if (!job) {
             break;
         }
 
         job->setStatus(JobStatus::Running);
 
-        {
-            std::osyncstream(std::cout)
-                << "[Worker "
-                << id_
-                << "] picked Job "
-                << job->getId()
-                << " ("
-                << job->getType()
-                << ")\n";
-        }
+        std::osyncstream(std::cout)
+            << "[Worker "
+            << id_
+            << "] picked Job "
+            << job->getId()
+            << " ("
+            << job->getType()
+            << ")\n";
 
         try {
             executor_.execute(*job);

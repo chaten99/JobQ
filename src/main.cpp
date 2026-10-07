@@ -3,6 +3,7 @@
 #include <stdexcept>
 #include <syncstream>
 #include <thread>
+#include <memory>
 
 #include "executor/JobExecutor.h"
 #include "job/Job.h"
@@ -80,7 +81,7 @@ int main() {
     pool.start();
 
     queue.push(
-        jobq::Job(
+        std::make_shared<jobq::Job>(
             1001,
             "REPORT",
             "monthly-report"
@@ -88,7 +89,7 @@ int main() {
     );
 
     queue.push(
-        jobq::Job(
+        std::make_shared<jobq::Job>(
             1002,
             "EMAIL",
             "welcome-email"
@@ -96,7 +97,7 @@ int main() {
     );
 
     queue.push(
-        jobq::Job(
+        std::make_shared<jobq::Job>(
             1003,
             "CALCULATE",
             "sum-1000000"
@@ -104,7 +105,7 @@ int main() {
     );
 
     queue.push(
-        jobq::Job(
+        std::make_shared<jobq::Job>(
             1004,
             "REPORT",
             "sales-report"
@@ -112,7 +113,7 @@ int main() {
     );
 
     queue.push(
-        jobq::Job(
+        std::make_shared<jobq::Job>(
             1005,
             "EMAIL",
             "notification-email"
@@ -120,7 +121,7 @@ int main() {
     );
 
     queue.push(
-        jobq::Job(
+        std::make_shared<jobq::Job>(
             1006,
             "CALCULATE",
             "analytics"
@@ -128,7 +129,7 @@ int main() {
     );
 
     queue.push(
-        jobq::Job(
+        std::make_shared<jobq::Job>(
             1007,
             "FAIL",
             "intentional-failure"
@@ -136,7 +137,7 @@ int main() {
     );
 
     queue.push(
-        jobq::Job(
+        std::make_shared<jobq::Job>(
             1008,
             "UNKNOWN",
             "no-handler"
@@ -144,7 +145,7 @@ int main() {
     );
 
     queue.push(
-        jobq::Job(
+        std::make_shared<jobq::Job>(
             1009,
             "EMAIL",
             "worker-survival-test"
