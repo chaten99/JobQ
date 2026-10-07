@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <thread>
 
 #include "executor/JobExecutor.h"
@@ -10,6 +11,7 @@ namespace jobq {
 class Worker {
 public:
     Worker(
+        std::size_t id,
         JobQueue& queue,
         JobExecutor& executor
     );
@@ -26,8 +28,11 @@ public:
 private:
     void run();
 
+    std::size_t id_;
+
     JobQueue& queue_;
     JobExecutor& executor_;
+
     std::thread thread_;
 };
 

@@ -7,10 +7,12 @@
 namespace jobq {
 
 Worker::Worker(
+    std::size_t id,
     JobQueue& queue,
     JobExecutor& executor
 )
-    : queue_(queue),
+    : id_(id),
+      queue_(queue),
       executor_(executor) {
 }
 
@@ -40,6 +42,17 @@ void Worker::run() {
 
         job->setStatus(JobStatus::Running);
 
+        {
+            std::osyncstream(std::cout)
+                << "[Worker "
+                << id_
+                << "] picked Job "
+                << job->getId()
+                << " ("
+                << job->getType()
+                << ")\n";
+        }
+
         try {
             executor_.execute(*job);
 
@@ -47,7 +60,7 @@ void Worker::run() {
 
             std::osyncstream(std::cout)
                 << "[Worker "
-                << std::this_thread::get_id()
+                << id_
                 << "] Job "
                 << job->getId()
                 << " completed\n";
@@ -57,7 +70,7 @@ void Worker::run() {
 
             std::osyncstream(std::cout)
                 << "[Worker "
-                << std::this_thread::get_id()
+                << id_
                 << "] Job "
                 << job->getId()
                 << " failed: "
@@ -69,7 +82,7 @@ void Worker::run() {
 
             std::osyncstream(std::cout)
                 << "[Worker "
-                << std::this_thread::get_id()
+                << id_
                 << "] Job "
                 << job->getId()
                 << " failed: unknown error\n";
@@ -78,7 +91,7 @@ void Worker::run() {
 
     std::osyncstream(std::cout)
         << "[Worker "
-        << std::this_thread::get_id()
+        << id_
         << "] stopped\n";
 }
 
