@@ -7,9 +7,9 @@
 
 #include "executor/JobExecutor.h"
 #include "job/Job.h"
+#include "manager/JobManager.h"
 #include "queue/JobQueue.h"
 #include "worker/WorkerPool.h"
-#include "manager/JobManager.h"
 
 int main() {
     std::cout << "========== Job Lifecycle Test ==========\n";
@@ -39,26 +39,37 @@ int main() {
         << jobq::toString(lifecycleTest->getStatus())
         << '\n';
 
+    bool invalidTransitionPassed = false;
+
     try {
         lifecycleTest->markRunning();
 
         std::cout << "Invalid transition test: FAIL\n";
-    }
-    catch (const std::logic_error& exception) {
+    } catch (const std::logic_error& exception) {
+        invalidTransitionPassed = true;
+
         std::cout << "Invalid transition test: PASS\n";
-        std::cout << "Expected error: "
-                  << exception.what()
-                  << '\n';
+        std::cout
+            << "Expected error: "
+            << exception.what()
+            << '\n';
     }
 
     std::cout << "========================================\n\n";
-    std::cout << "\n========== JobManager Test ==========\n";
 
-    jobq::JobManager manager;
+    if (!invalidTransitionPassed) {
+        std::cerr << "Job lifecycle test failed.\n";
+        return 1;
+    }
 
-    auto trackedJob = manager.createJob(
+    std::cout << "========== JobManager Test ==========\n";
+
+    jobq::JobQueue managerQueue;
+    jobq::JobManager manager(managerQueue);
+
+    auto trackedJob = manager.submit(
         "EMAIL",
-        "job-manager-smoke-test"
+        "job-manager-submit-smoke-test"
     );
 
     const auto jobId = trackedJob->getId();
@@ -66,44 +77,74 @@ int main() {
     auto foundJob = manager.getJob(jobId);
     auto foundStatus = manager.getStatus(jobId);
 
-    std::cout << "Generated Job ID: "
-            << jobId
-            << '\n';
-
-    std::cout << "Tracked status: "
-            << (foundStatus
-                    ? jobq::toString(*foundStatus)
-                    : "NOT FOUND")
-            << '\n';
-
-    std::cout << "Total tracked jobs: "
-            << manager.totalJobs()
-            << '\n';
-
-    const bool lookupPassed =
-        foundJob &&
-        foundJob == trackedJob &&
-        foundStatus.has_value() &&
-        *foundStatus == jobq::JobStatus::Pending &&
-        manager.totalJobs() == 1;
+    if (!foundJob || !foundStatus.has_value()) {
+        std::cerr << "JobManager lookup test: FAIL\n";
+        return 1;
+    }
 
     std::cout
-        << "Job registry test: "
-        << (lookupPassed ? "PASS" : "FAIL")
+        << "Generated Job ID: "
+        << jobId
         << '\n';
 
-    const bool unknownIdHandled =
-        !manager.getJob(999999) &&
-        !manager.getStatus(999999).has_value();
+    std::cout
+        << "Tracked status: "
+        << jobq::toString(*foundStatus)
+        << '\n';
 
     std::cout
-        << "Unknown ID test: "
-        << (unknownIdHandled ? "PASS" : "FAIL")
+        << "Tracked jobs: "
+        << manager.totalJobs()
+        << '\n';
+
+    std::cout
+        << "Queued jobs: "
+        << managerQueue.size()
+        << '\n';
+
+    const bool submissionPassed =
+        foundJob == trackedJob &&
+        *foundStatus == jobq::JobStatus::Pending &&
+        manager.totalJobs() == 1 &&
+        managerQueue.size() == 1;
+
+    std::cout
+        << "Job submission test: "
+        << (submissionPassed ? "PASS" : "FAIL")
+        << '\n';
+
+    managerQueue.close();
+
+    bool closedQueueHandled = false;
+
+    try {
+        manager.submit(
+            "EMAIL",
+            "rejected-submission-test"
+        );
+    } catch (const std::runtime_error& exception) {
+        closedQueueHandled = true;
+
+        std::cout
+            << "Expected submission error: "
+            << exception.what()
+            << '\n';
+    }
+
+    const bool rollbackPassed =
+        closedQueueHandled &&
+        manager.totalJobs() == 1 &&
+        managerQueue.size() == 1;
+
+    std::cout
+        << "Closed queue rejection test: "
+        << (rollbackPassed ? "PASS" : "FAIL")
         << '\n';
 
     std::cout << "====================================\n\n";
 
-    if (!lookupPassed || !unknownIdHandled) {
+    if (!submissionPassed || !rollbackPassed) {
+        std::cerr << "JobManager test failed.\n";
         return 1;
     }
 

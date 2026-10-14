@@ -10,12 +10,14 @@
 #include <unordered_map>
 
 #include "job/Job.h"
+#include "queue/JobQueue.h"
 
 namespace jobq {
 
 class JobManager {
 public:
-    JobManager() = default;
+    explicit JobManager(JobQueue& queue)
+        : queue_(queue) {}
 
     JobManager(const JobManager&) = delete;
     JobManager& operator=(const JobManager&) = delete;
@@ -25,25 +27,25 @@ public:
         std::string payload
     );
 
-    std::shared_ptr<Job> getJob(
-        std::uint64_t id
-    ) const;
+    std::shared_ptr<Job> submit(
+        std::string type,
+        std::string payload
+    );
 
-    std::optional<JobStatus> getStatus(
-        std::uint64_t id
-    ) const;
+    std::shared_ptr<Job> getJob(uint64_t id) const;
 
-    std::size_t totalJobs() const;
+    std::optional<JobStatus> getStatus(uint64_t id) const;
+
+    size_t totalJobs() const;
 
 private:
-    std::atomic<std::uint64_t> nextId_{1};
+    JobQueue& queue_;
+
+    std::atomic<uint64_t> nextId_{1};
 
     mutable std::shared_mutex registryMutex_;
 
-    std::unordered_map<
-        std::uint64_t,
-        std::shared_ptr<Job>
-    > jobs_;
+    std::unordered_map<uint64_t, std::shared_ptr<Job>> jobs_;
 };
 
-} // namespace jobq
+}
