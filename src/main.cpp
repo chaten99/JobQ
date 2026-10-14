@@ -1,9 +1,11 @@
 #include <chrono>
+#include <cstddef>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
 #include <syncstream>
 #include <thread>
+#include <vector>
 
 #include "executor/JobExecutor.h"
 #include "job/Job.h"
@@ -64,18 +66,18 @@ int main() {
 
     std::cout << "========== JobManager Test ==========\n";
 
-    jobq::JobQueue managerQueue;
-    jobq::JobManager manager(managerQueue);
+    jobq::JobQueue managerTestQueue;
+    jobq::JobManager managerTest(managerTestQueue);
 
-    auto trackedJob = manager.submit(
+    auto trackedJob = managerTest.submit(
         "EMAIL",
         "job-manager-submit-smoke-test"
     );
 
     const auto jobId = trackedJob->getId();
 
-    auto foundJob = manager.getJob(jobId);
-    auto foundStatus = manager.getStatus(jobId);
+    auto foundJob = managerTest.getJob(jobId);
+    auto foundStatus = managerTest.getStatus(jobId);
 
     if (!foundJob || !foundStatus.has_value()) {
         std::cerr << "JobManager lookup test: FAIL\n";
@@ -94,31 +96,31 @@ int main() {
 
     std::cout
         << "Tracked jobs: "
-        << manager.totalJobs()
+        << managerTest.totalJobs()
         << '\n';
 
     std::cout
         << "Queued jobs: "
-        << managerQueue.size()
+        << managerTestQueue.size()
         << '\n';
 
     const bool submissionPassed =
         foundJob == trackedJob &&
         *foundStatus == jobq::JobStatus::Pending &&
-        manager.totalJobs() == 1 &&
-        managerQueue.size() == 1;
+        managerTest.totalJobs() == 1 &&
+        managerTestQueue.size() == 1;
 
     std::cout
         << "Job submission test: "
         << (submissionPassed ? "PASS" : "FAIL")
         << '\n';
 
-    managerQueue.close();
+    managerTestQueue.close();
 
     bool closedQueueHandled = false;
 
     try {
-        manager.submit(
+        managerTest.submit(
             "EMAIL",
             "rejected-submission-test"
         );
@@ -133,8 +135,8 @@ int main() {
 
     const bool rollbackPassed =
         closedQueueHandled &&
-        manager.totalJobs() == 1 &&
-        managerQueue.size() == 1;
+        managerTest.totalJobs() == 1 &&
+        managerTestQueue.size() == 1;
 
     std::cout
         << "Closed queue rejection test: "
@@ -148,7 +150,10 @@ int main() {
         return 1;
     }
 
+    std::cout << "========== Worker Pool Demo ==========\n";
+
     jobq::JobQueue queue;
+    jobq::JobManager manager(queue);
     jobq::JobExecutor executor;
 
     executor.registerHandler(
@@ -217,85 +222,124 @@ int main() {
 
     pool.start();
 
+    std::vector<std::shared_ptr<jobq::Job>> submittedJobs;
+    submittedJobs.reserve(9);
 
-    bool allJobsAccepted = true;
+    const auto submitDemoJob =
+        [&manager, &submittedJobs](
+            const char* type,
+            const char* payload
+        ) {
+            auto job = manager.submit(type, payload);
+            submittedJobs.push_back(std::move(job));
+        };
 
-    allJobsAccepted =
-        queue.push(
-            std::make_shared<jobq::Job>(
-                1001, "REPORT", "monthly-report"
-            )
-        ) && allJobsAccepted;
-
-    allJobsAccepted =
-        queue.push(
-            std::make_shared<jobq::Job>(
-                1002, "EMAIL", "welcome-email"
-            )
-        ) && allJobsAccepted;
-
-    allJobsAccepted =
-        queue.push(
-            std::make_shared<jobq::Job>(
-                1003, "CALCULATE", "sum-1000000"
-            )
-        ) && allJobsAccepted;
-
-    allJobsAccepted =
-        queue.push(
-            std::make_shared<jobq::Job>(
-                1004, "REPORT", "sales-report"
-            )
-        ) && allJobsAccepted;
-
-    allJobsAccepted =
-        queue.push(
-            std::make_shared<jobq::Job>(
-                1005, "EMAIL", "notification-email"
-            )
-        ) && allJobsAccepted;
-
-    allJobsAccepted =
-        queue.push(
-            std::make_shared<jobq::Job>(
-                1006, "CALCULATE", "analytics"
-            )
-        ) && allJobsAccepted;
-
-    allJobsAccepted =
-        queue.push(
-            std::make_shared<jobq::Job>(
-                1007, "FAIL", "intentional-failure"
-            )
-        ) && allJobsAccepted;
-
-    allJobsAccepted =
-        queue.push(
-            std::make_shared<jobq::Job>(
-                1008, "UNKNOWN", "no-handler"
-            )
-        ) && allJobsAccepted;
-
-    allJobsAccepted =
-        queue.push(
-            std::make_shared<jobq::Job>(
-                1009, "EMAIL", "worker-survival-test"
-            )
-        ) && allJobsAccepted;
-
-    if (!allJobsAccepted) {
+    try {
+        submitDemoJob("REPORT", "monthly-report");
+        submitDemoJob("EMAIL", "welcome-email");
+        submitDemoJob("CALCULATE", "sum-1000000");
+        submitDemoJob("REPORT", "sales-report");
+        submitDemoJob("EMAIL", "notification-email");
+        submitDemoJob("CALCULATE", "analytics");
+        submitDemoJob("FAIL", "intentional-failure");
+        submitDemoJob("UNKNOWN", "no-handler");
+        submitDemoJob("EMAIL", "worker-survival-test");
+    } catch (const std::exception& exception) {
         std::cerr
-            << "ERROR: One or more jobs were rejected.\n";
+            << "Job submission failed: "
+            << exception.what()
+            << '\n';
 
         pool.stop();
         return 1;
     }
 
-    std::cout << "Submitted 9 jobs.\n";
+    std::cout
+        << "Submitted jobs: "
+        << submittedJobs.size()
+        << '\n';
+
+    std::cout
+        << "Jobs tracked by manager: "
+        << manager.totalJobs()
+        << '\n';
 
     pool.stop();
 
     std::cout << "JobQ stopped cleanly.\n";
 
-    return 0;
+    std::cout << "\n========== Final Job Statuses ==========\n";
+
+    std::size_t completedJobs = 0;
+    std::size_t failedJobs = 0;
+
+    bool lifecycleTrackingPassed =
+        manager.totalJobs() == submittedJobs.size();
+
+    for (const auto& job : submittedJobs) {
+        const auto status = manager.getStatus(job->getId());
+
+        if (!status.has_value()) {
+            std::cerr
+                << "Missing registry entry for Job "
+                << job->getId()
+                << '\n';
+
+            lifecycleTrackingPassed = false;
+            continue;
+        }
+
+        std::cout
+            << "Job "
+            << job->getId()
+            << " ("
+            << job->getType()
+            << ") final status: "
+            << jobq::toString(*status)
+            << '\n';
+
+        if (*status == jobq::JobStatus::Completed) {
+            ++completedJobs;
+        } else if (*status == jobq::JobStatus::Failed) {
+            ++failedJobs;
+        } else {
+            lifecycleTrackingPassed = false;
+        }
+    }
+
+    const bool expectedResults =
+        completedJobs == 7 &&
+        failedJobs == 2 &&
+        completedJobs + failedJobs == submittedJobs.size();
+
+    lifecycleTrackingPassed =
+        lifecycleTrackingPassed &&
+        expectedResults &&
+        manager.totalJobs() == 9;
+
+    std::cout << "----------------------------------------\n";
+
+    std::cout
+        << "Total tracked jobs: "
+        << manager.totalJobs()
+        << '\n';
+
+    std::cout
+        << "Completed jobs: "
+        << completedJobs
+        << '\n';
+
+    std::cout
+        << "Failed jobs: "
+        << failedJobs
+        << '\n';
+
+    std::cout
+        << "Lifecycle tracking test: "
+        << (lifecycleTrackingPassed ? "PASS" : "FAIL")
+        << '\n';
+
+    std::cout << "========================================\n";
+
+    return lifecycleTrackingPassed ? 0 : 1;
 }
