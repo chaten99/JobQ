@@ -40,7 +40,7 @@ void Worker::run() {
             break;
         }
 
-        job->setStatus(JobStatus::Running);
+        job->markRunning();
 
         std::osyncstream(std::cout)
             << "[Worker "
@@ -54,7 +54,7 @@ void Worker::run() {
         try {
             executor_.execute(*job);
 
-            job->setStatus(JobStatus::Completed);
+            job->markCompleted();
 
             std::osyncstream(std::cout)
                 << "[Worker "
@@ -64,7 +64,7 @@ void Worker::run() {
                 << " completed\n";
         }
         catch (const std::exception& exception) {
-            job->setStatus(JobStatus::Failed);
+            job->markFailed();
 
             std::osyncstream(std::cout)
                 << "[Worker "
@@ -76,7 +76,7 @@ void Worker::run() {
                 << '\n';
         }
         catch (...) {
-            job->setStatus(JobStatus::Failed);
+            job->markFailed();
 
             std::osyncstream(std::cout)
                 << "[Worker "

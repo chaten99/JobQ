@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstdint>
+#include <mutex>
 #include <string>
+#include <string_view>
 
 namespace jobq {
 
@@ -12,6 +14,8 @@ enum class JobStatus {
     Failed,
     Cancelled
 };
+
+std::string_view toString(JobStatus status);
 
 class Job {
 public:
@@ -29,12 +33,25 @@ public:
 
     JobStatus getStatus() const;
 
-    void setStatus(JobStatus status);
+    void markRunning();
+
+    void markCompleted();
+
+    void markFailed();
+
+    void markCancelled();
 
 private:
+    void transitionTo(
+        JobStatus expectedCurrent,
+        JobStatus newStatus
+    );
+
     std::uint64_t id_;
     std::string type_;
     std::string payload_;
+
+    mutable std::mutex statusMutex_;
     JobStatus status_;
 };
 

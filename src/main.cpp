@@ -1,9 +1,9 @@
 #include <chrono>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <syncstream>
 #include <thread>
-#include <memory>
 
 #include "executor/JobExecutor.h"
 #include "job/Job.h"
@@ -11,6 +11,47 @@
 #include "worker/WorkerPool.h"
 
 int main() {
+    std::cout << "========== Job Lifecycle Test ==========\n";
+
+    auto lifecycleTest = std::make_shared<jobq::Job>(
+        9999,
+        "TEST",
+        "lifecycle-validation"
+    );
+
+    std::cout
+        << "Initial status: "
+        << jobq::toString(lifecycleTest->getStatus())
+        << '\n';
+
+    lifecycleTest->markRunning();
+
+    std::cout
+        << "After starting: "
+        << jobq::toString(lifecycleTest->getStatus())
+        << '\n';
+
+    lifecycleTest->markCompleted();
+
+    std::cout
+        << "After completion: "
+        << jobq::toString(lifecycleTest->getStatus())
+        << '\n';
+
+    try {
+        lifecycleTest->markRunning();
+
+        std::cout << "Invalid transition test: FAIL\n";
+    }
+    catch (const std::logic_error& exception) {
+        std::cout << "Invalid transition test: PASS\n";
+        std::cout << "Expected error: "
+                  << exception.what()
+                  << '\n';
+    }
+
+    std::cout << "========================================\n\n";
+
     jobq::JobQueue queue;
     jobq::JobExecutor executor;
 
@@ -80,84 +121,85 @@ int main() {
 
     pool.start();
 
-    queue.push(
-        std::make_shared<jobq::Job>(
-            1001,
-            "REPORT",
-            "monthly-report"
-        )
-    );
 
-    queue.push(
-        std::make_shared<jobq::Job>(
-            1002,
-            "EMAIL",
-            "welcome-email"
-        )
-    );
+    bool allJobsAccepted = true;
 
-    queue.push(
-        std::make_shared<jobq::Job>(
-            1003,
-            "CALCULATE",
-            "sum-1000000"
-        )
-    );
+    allJobsAccepted =
+        queue.push(
+            std::make_shared<jobq::Job>(
+                1001, "REPORT", "monthly-report"
+            )
+        ) && allJobsAccepted;
 
-    queue.push(
-        std::make_shared<jobq::Job>(
-            1004,
-            "REPORT",
-            "sales-report"
-        )
-    );
+    allJobsAccepted =
+        queue.push(
+            std::make_shared<jobq::Job>(
+                1002, "EMAIL", "welcome-email"
+            )
+        ) && allJobsAccepted;
 
-    queue.push(
-        std::make_shared<jobq::Job>(
-            1005,
-            "EMAIL",
-            "notification-email"
-        )
-    );
+    allJobsAccepted =
+        queue.push(
+            std::make_shared<jobq::Job>(
+                1003, "CALCULATE", "sum-1000000"
+            )
+        ) && allJobsAccepted;
 
-    queue.push(
-        std::make_shared<jobq::Job>(
-            1006,
-            "CALCULATE",
-            "analytics"
-        )
-    );
+    allJobsAccepted =
+        queue.push(
+            std::make_shared<jobq::Job>(
+                1004, "REPORT", "sales-report"
+            )
+        ) && allJobsAccepted;
 
-    queue.push(
-        std::make_shared<jobq::Job>(
-            1007,
-            "FAIL",
-            "intentional-failure"
-        )
-    );
+    allJobsAccepted =
+        queue.push(
+            std::make_shared<jobq::Job>(
+                1005, "EMAIL", "notification-email"
+            )
+        ) && allJobsAccepted;
 
-    queue.push(
-        std::make_shared<jobq::Job>(
-            1008,
-            "UNKNOWN",
-            "no-handler"
-        )
-    );
+    allJobsAccepted =
+        queue.push(
+            std::make_shared<jobq::Job>(
+                1006, "CALCULATE", "analytics"
+            )
+        ) && allJobsAccepted;
 
-    queue.push(
-        std::make_shared<jobq::Job>(
-            1009,
-            "EMAIL",
-            "worker-survival-test"
-        )
-    );
+    allJobsAccepted =
+        queue.push(
+            std::make_shared<jobq::Job>(
+                1007, "FAIL", "intentional-failure"
+            )
+        ) && allJobsAccepted;
+
+    allJobsAccepted =
+        queue.push(
+            std::make_shared<jobq::Job>(
+                1008, "UNKNOWN", "no-handler"
+            )
+        ) && allJobsAccepted;
+
+    allJobsAccepted =
+        queue.push(
+            std::make_shared<jobq::Job>(
+                1009, "EMAIL", "worker-survival-test"
+            )
+        ) && allJobsAccepted;
+
+    if (!allJobsAccepted) {
+        std::cerr
+            << "ERROR: One or more jobs were rejected.\n";
+
+        pool.stop();
+        return 1;
+    }
 
     std::cout << "Submitted 9 jobs.\n";
 
     pool.stop();
 
-    std::cout
-        << "JobQ stopped cleanly.\n";
+    std::cout << "JobQ stopped cleanly.\n";
 
     return 0;
 }
