@@ -9,6 +9,7 @@
 #include "job/Job.h"
 #include "queue/JobQueue.h"
 #include "worker/WorkerPool.h"
+#include "manager/JobManager.h"
 
 int main() {
     std::cout << "========== Job Lifecycle Test ==========\n";
@@ -51,6 +52,60 @@ int main() {
     }
 
     std::cout << "========================================\n\n";
+    std::cout << "\n========== JobManager Test ==========\n";
+
+    jobq::JobManager manager;
+
+    auto trackedJob = manager.createJob(
+        "EMAIL",
+        "job-manager-smoke-test"
+    );
+
+    const auto jobId = trackedJob->getId();
+
+    auto foundJob = manager.getJob(jobId);
+    auto foundStatus = manager.getStatus(jobId);
+
+    std::cout << "Generated Job ID: "
+            << jobId
+            << '\n';
+
+    std::cout << "Tracked status: "
+            << (foundStatus
+                    ? jobq::toString(*foundStatus)
+                    : "NOT FOUND")
+            << '\n';
+
+    std::cout << "Total tracked jobs: "
+            << manager.totalJobs()
+            << '\n';
+
+    const bool lookupPassed =
+        foundJob &&
+        foundJob == trackedJob &&
+        foundStatus.has_value() &&
+        *foundStatus == jobq::JobStatus::Pending &&
+        manager.totalJobs() == 1;
+
+    std::cout
+        << "Job registry test: "
+        << (lookupPassed ? "PASS" : "FAIL")
+        << '\n';
+
+    const bool unknownIdHandled =
+        !manager.getJob(999999) &&
+        !manager.getStatus(999999).has_value();
+
+    std::cout
+        << "Unknown ID test: "
+        << (unknownIdHandled ? "PASS" : "FAIL")
+        << '\n';
+
+    std::cout << "====================================\n\n";
+
+    if (!lookupPassed || !unknownIdHandled) {
+        return 1;
+    }
 
     jobq::JobQueue queue;
     jobq::JobExecutor executor;

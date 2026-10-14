@@ -19,6 +19,7 @@ add_executable(jobq
     src/executor/JobExecutor.cpp
     src/worker/Worker.cpp
     src/worker/WorkerPool.cpp
+    src/manager/JobManager.cpp
 )
 
 target_include_directories(jobq
@@ -39,6 +40,7 @@ add_executable(jobq_stress_test
     src/executor/JobExecutor.cpp
     src/worker/Worker.cpp
     src/worker/WorkerPool.cpp
+    src/manager/JobManager.cpp
 )
 
 target_include_directories(jobq_stress_test
