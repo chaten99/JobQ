@@ -22,6 +22,8 @@ public:
 
     bool push(std::shared_ptr<Job> job);
 
+    bool pushRetry(std::shared_ptr<Job> job);
+
     std::shared_ptr<Job> tryPop();
 
     std::shared_ptr<Job> waitAndPop();
@@ -66,11 +68,9 @@ private:
     > jobs_;
 
     mutable std::mutex mutex_;
-
     std::condition_variable condition_;
 
     bool closed_{false};
-
     uint64_t nextSequence_{0};
 };
 

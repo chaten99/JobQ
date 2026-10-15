@@ -25,7 +25,26 @@ bool JobQueue::push(std::shared_ptr<Job> job) {
     }
 
     condition_.notify_one();
+    return true;
+}
 
+bool JobQueue::pushRetry(std::shared_ptr<Job> job) {
+    if (!job) {
+        return false;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        jobs_.push(
+            QueueEntry{
+                std::move(job),
+                nextSequence_++
+            }
+        );
+    }
+
+    condition_.notify_one();
     return true;
 }
 
