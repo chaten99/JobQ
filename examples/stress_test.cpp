@@ -6,6 +6,7 @@
 #include <string>
 #include <thread>
 #include <vector>
+#include <memory>
 
 #include "executor/JobExecutor.h"
 #include "job/Job.h"
@@ -160,7 +161,7 @@ int main() {
 
                     const bool accepted =
                         queue.push(
-                            jobq::Job(
+                            std::make_shared<jobq::Job>(
                                 jobId,
                                 jobType,
                                 "stress-test-job"
