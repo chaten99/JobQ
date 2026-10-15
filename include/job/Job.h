@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <mutex>
@@ -24,6 +25,11 @@ enum class JobPriority {
 
 struct RetryPolicy {
     std::size_t maxRetries{0};
+    std::chrono::milliseconds initialDelay{100};
+
+    double multiplier{2.0};
+
+    std::chrono::milliseconds maxDelay{5000};
 };
 
 std::string_view toString(JobStatus status);
@@ -54,6 +60,8 @@ public:
     JobStatus getStatus() const;
 
     bool canRetry() const;
+
+    std::chrono::milliseconds getRetryDelay() const;
 
     bool prepareForRetry();
 

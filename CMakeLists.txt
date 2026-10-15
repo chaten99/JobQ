@@ -117,4 +117,22 @@ if(BUILD_TESTING)
         NAME jobq_retry_execution
         COMMAND jobq_retry_execution_test
     )
+
+    add_executable(jobq_retry_backoff_test
+        tests/job_retry_backoff_test.cpp
+        ${JOBQ_CORE_SOURCES}
+    )
+
+    target_include_directories(jobq_retry_backoff_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(jobq_retry_backoff_test PRIVATE
+        Threads::Threads
+    )
+
+    add_test(
+        NAME jobq_retry_backoff
+        COMMAND jobq_retry_backoff_test
+    )
 endif()

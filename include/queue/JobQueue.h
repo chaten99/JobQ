@@ -1,5 +1,6 @@
 #pragma once
 
+#include <chrono>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -22,7 +23,10 @@ public:
 
     bool push(std::shared_ptr<Job> job);
 
-    bool pushRetry(std::shared_ptr<Job> job);
+    bool pushRetry(
+        std::shared_ptr<Job> job,
+        std::chrono::milliseconds delay
+    );
 
     std::shared_ptr<Job> tryPop();
 
@@ -37,6 +41,8 @@ public:
     std::size_t size() const;
 
 private:
+    using Clock = std::chrono::steady_clock;
+
     struct QueueEntry {
         std::shared_ptr<Job> job;
         uint64_t sequence;
@@ -61,11 +67,38 @@ private:
         }
     };
 
+    struct DelayedEntry {
+        std::shared_ptr<Job> job;
+        uint64_t sequence;
+        Clock::time_point readyAt;
+    };
+
+    struct DelayedEntryCompare {
+        bool operator()(
+            const DelayedEntry& left,
+            const DelayedEntry& right
+        ) const {
+            if (left.readyAt != right.readyAt) {
+                return left.readyAt > right.readyAt;
+            }
+
+            return left.sequence > right.sequence;
+        }
+    };
+
+    void promoteDueRetriesLocked();
+
     std::priority_queue<
         QueueEntry,
         std::vector<QueueEntry>,
         QueueEntryCompare
     > jobs_;
+
+    std::priority_queue<
+        DelayedEntry,
+        std::vector<DelayedEntry>,
+        DelayedEntryCompare
+    > delayedRetries_;
 
     mutable std::mutex mutex_;
     std::condition_variable condition_;

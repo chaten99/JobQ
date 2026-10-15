@@ -1,5 +1,7 @@
 #include "job/Job.h"
 
+#include <algorithm>
+#include <cmath>
 #include <stdexcept>
 #include <utility>
 
@@ -53,7 +55,27 @@ Job::Job(
       payload_(std::move(payload)),
       priority_(priority),
       retryPolicy_(retryPolicy),
-      status_(JobStatus::Pending) {}
+      status_(JobStatus::Pending) {
+
+    if (retryPolicy_.initialDelay.count() < 0) {
+        throw std::invalid_argument(
+            "Retry initial delay cannot be negative"
+        );
+    }
+
+    if (retryPolicy_.maxDelay.count() < 0) {
+        throw std::invalid_argument(
+            "Retry maximum delay cannot be negative"
+        );
+    }
+
+    if (!std::isfinite(retryPolicy_.multiplier) ||
+        retryPolicy_.multiplier < 1.0) {
+        throw std::invalid_argument(
+            "Retry multiplier must be finite and at least 1.0"
+        );
+    }
+}
 
 uint64_t Job::getId() const {
     return id_;
@@ -93,6 +115,46 @@ bool Job::canRetry() const {
            attemptsMade_ <= retryPolicy_.maxRetries;
 }
 
+std::chrono::milliseconds Job::getRetryDelay() const {
+    std::lock_guard<std::mutex> lock(statusMutex_);
+
+    if (attemptsMade_ == 0) {
+        return std::chrono::milliseconds{0};
+    }
+
+    const double initialDelay =
+        static_cast<double>(retryPolicy_.initialDelay.count());
+
+    const double maximumDelay =
+        static_cast<double>(retryPolicy_.maxDelay.count());
+
+    if (initialDelay <= 0.0 || maximumDelay <= 0.0) {
+        return std::chrono::milliseconds{0};
+    }
+    
+    double delay = std::min(initialDelay, maximumDelay);
+
+    const std::size_t exponent = attemptsMade_ - 1;
+
+    for (std::size_t index = 0; index < exponent; ++index) {
+        if (delay >= maximumDelay) {
+            break;
+        }
+
+        delay = std::min(
+            maximumDelay,
+            delay * retryPolicy_.multiplier
+        );
+    }
+
+    using MillisecondsRep =
+        std::chrono::milliseconds::rep;
+
+    return std::chrono::milliseconds{
+        static_cast<MillisecondsRep>(delay)
+    };
+}
+
 bool Job::prepareForRetry() {
     std::lock_guard<std::mutex> lock(statusMutex_);
 
@@ -102,8 +164,6 @@ bool Job::prepareForRetry() {
         );
     }
 
-    // maxRetries counts retries after the initial attempt.
-    // For example, maxRetries=2 permits 3 total attempts.
     if (attemptsMade_ == 0 ||
         attemptsMade_ > retryPolicy_.maxRetries) {
         return false;
@@ -130,7 +190,6 @@ void Job::transitionTo(
 
     status_ = newStatus;
 
-    // Each successful transition to RUNNING starts a new attempt.
     if (newStatus == JobStatus::Running) {
         ++attemptsMade_;
     }

@@ -2,7 +2,6 @@
 
 #include <exception>
 #include <iostream>
-#include <stdexcept>
 #include <syncstream>
 
 namespace jobq {
@@ -18,8 +17,7 @@ void handleJobFailure(
     try {
         job->markFailed();
     } catch (...) {
-        // Do not terminate the worker loop because of a
-        // status-transition error.
+        // Keep the worker alive if a status transition fails.
     }
 
     const auto attemptsMade = job->getAttemptsMade();
@@ -48,6 +46,8 @@ void handleJobFailure(
     }
 
     try {
+        const auto retryDelay = job->getRetryDelay();
+
         if (!job->prepareForRetry()) {
             std::osyncstream(std::cout)
                 << "[Worker " << workerId
@@ -58,11 +58,14 @@ void handleJobFailure(
             return;
         }
 
-        if (queue.pushRetry(job)) {
+        if (queue.pushRetry(job, retryDelay)) {
             std::osyncstream(std::cout)
                 << "[Worker " << workerId
                 << "] Retry scheduled for Job "
                 << job->getId()
+                << " after "
+                << retryDelay.count()
+                << " ms"
                 << " (next attempt "
                 << attemptsMade + 1
                 << ", priority "

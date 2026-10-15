@@ -28,7 +28,10 @@ bool JobQueue::push(std::shared_ptr<Job> job) {
     return true;
 }
 
-bool JobQueue::pushRetry(std::shared_ptr<Job> job) {
+bool JobQueue::pushRetry(
+    std::shared_ptr<Job> job,
+    std::chrono::milliseconds delay
+) {
     if (!job) {
         return false;
     }
@@ -36,20 +39,50 @@ bool JobQueue::pushRetry(std::shared_ptr<Job> job) {
     {
         std::lock_guard<std::mutex> lock(mutex_);
 
+        if (delay <= std::chrono::milliseconds::zero()) {
+            jobs_.push(
+                QueueEntry{
+                    std::move(job),
+                    nextSequence_++
+                }
+            );
+        } else {
+            delayedRetries_.push(
+                DelayedEntry{
+                    std::move(job),
+                    nextSequence_++,
+                    Clock::now() + delay
+                }
+            );
+        }
+
+    }
+
+    condition_.notify_all();
+    return true;
+}
+
+void JobQueue::promoteDueRetriesLocked() {
+    const auto now = Clock::now();
+
+    while (!delayedRetries_.empty() &&
+           delayedRetries_.top().readyAt <= now) {
+        auto entry = delayedRetries_.top();
+        delayedRetries_.pop();
+
         jobs_.push(
             QueueEntry{
-                std::move(job),
+                std::move(entry.job),
                 nextSequence_++
             }
         );
     }
-
-    condition_.notify_one();
-    return true;
 }
 
 std::shared_ptr<Job> JobQueue::tryPop() {
     std::lock_guard<std::mutex> lock(mutex_);
+
+    promoteDueRetriesLocked();
 
     if (jobs_.empty()) {
         return nullptr;
@@ -64,18 +97,29 @@ std::shared_ptr<Job> JobQueue::tryPop() {
 std::shared_ptr<Job> JobQueue::waitAndPop() {
     std::unique_lock<std::mutex> lock(mutex_);
 
-    condition_.wait(lock, [this]() {
-        return closed_ || !jobs_.empty();
-    });
+    while (true) {
+        promoteDueRetriesLocked();
 
-    if (jobs_.empty()) {
-        return nullptr;
+        if (!jobs_.empty()) {
+            auto job = jobs_.top().job;
+            jobs_.pop();
+
+            return job;
+        }
+
+        if (closed_ && delayedRetries_.empty()) {
+            return nullptr;
+        }
+
+        if (!delayedRetries_.empty()) {
+            condition_.wait_until(
+                lock,
+                delayedRetries_.top().readyAt
+            );
+        } else {
+            condition_.wait(lock);
+        }
     }
-
-    auto job = jobs_.top().job;
-    jobs_.pop();
-
-    return job;
 }
 
 void JobQueue::close() {
@@ -94,12 +138,16 @@ bool JobQueue::isClosed() const {
 
 bool JobQueue::empty() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    return jobs_.empty();
+
+    return jobs_.empty() &&
+           delayedRetries_.empty();
 }
 
 std::size_t JobQueue::size() const {
     std::lock_guard<std::mutex> lock(mutex_);
-    return jobs_.size();
+
+    return jobs_.size() +
+           delayedRetries_.size();
 }
 
 }
