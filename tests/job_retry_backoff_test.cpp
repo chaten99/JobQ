@@ -1,9 +1,13 @@
+
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdlib>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <string>
+#include <thread>
 
 #include "executor/JobExecutor.h"
 #include "job/Job.h"
@@ -39,7 +43,7 @@ void testExponentialDelayCalculation() {
         "backoff-calculation",
         jobq::JobPriority::Normal,
         jobq::RetryPolicy{
-            4,
+            5,
             100ms,
             2.0,
             500ms
@@ -82,16 +86,16 @@ void testExponentialDelayCalculation() {
     );
 }
 
-void testInvalidRetryPolicy() {
+void testRetryPolicyValidation() {
     std::cout << "\n--- Retry Policy Validation ---\n";
 
-    bool negativeDelayRejected = false;
+    bool negativeInitialDelayRejected = false;
 
     try {
         jobq::Job job(
             2,
             "EMAIL",
-            "negative-delay",
+            "negative-initial-delay",
             jobq::JobPriority::Normal,
             jobq::RetryPolicy{
                 2,
@@ -101,19 +105,43 @@ void testInvalidRetryPolicy() {
             }
         );
     } catch (const std::invalid_argument&) {
-        negativeDelayRejected = true;
+        negativeInitialDelayRejected = true;
     }
 
     check(
-        negativeDelayRejected,
+        negativeInitialDelayRejected,
         "Negative initial delay is rejected"
     );
 
-    bool invalidMultiplierRejected = false;
+    bool negativeMaximumDelayRejected = false;
 
     try {
         jobq::Job job(
             3,
+            "EMAIL",
+            "negative-maximum-delay",
+            jobq::JobPriority::Normal,
+            jobq::RetryPolicy{
+                2,
+                100ms,
+                2.0,
+                -500ms
+            }
+        );
+    } catch (const std::invalid_argument&) {
+        negativeMaximumDelayRejected = true;
+    }
+
+    check(
+        negativeMaximumDelayRejected,
+        "Negative maximum delay is rejected"
+    );
+
+    bool multiplierBelowOneRejected = false;
+
+    try {
+        jobq::Job job(
+            4,
             "EMAIL",
             "invalid-multiplier",
             jobq::JobPriority::Normal,
@@ -125,17 +153,148 @@ void testInvalidRetryPolicy() {
             }
         );
     } catch (const std::invalid_argument&) {
-        invalidMultiplierRejected = true;
+        multiplierBelowOneRejected = true;
     }
 
     check(
-        invalidMultiplierRejected,
+        multiplierBelowOneRejected,
         "Multiplier below 1.0 is rejected"
+    );
+
+    bool nanMultiplierRejected = false;
+
+    try {
+        jobq::Job job(
+            5,
+            "EMAIL",
+            "nan-multiplier",
+            jobq::JobPriority::Normal,
+            jobq::RetryPolicy{
+                2,
+                100ms,
+                std::numeric_limits<double>::quiet_NaN(),
+                1000ms
+            }
+        );
+    } catch (const std::invalid_argument&) {
+        nanMultiplierRejected = true;
+    }
+
+    check(
+        nanMultiplierRejected,
+        "NaN multiplier is rejected"
+    );
+
+    bool infiniteMultiplierRejected = false;
+
+    try {
+        jobq::Job job(
+            6,
+            "EMAIL",
+            "infinite-multiplier",
+            jobq::JobPriority::Normal,
+            jobq::RetryPolicy{
+                2,
+                100ms,
+                std::numeric_limits<double>::infinity(),
+                1000ms
+            }
+        );
+    } catch (const std::invalid_argument&) {
+        infiniteMultiplierRejected = true;
+    }
+
+    check(
+        infiniteMultiplierRejected,
+        "Infinite multiplier is rejected"
+    );
+}
+
+void testMaximumDelaySmallerThanInitialDelay() {
+    std::cout << "\n--- Initial Delay Above Maximum ---\n";
+
+    jobq::Job job(
+        7,
+        "EMAIL",
+        "initial-above-maximum",
+        jobq::JobPriority::Normal,
+        jobq::RetryPolicy{
+            2,
+            600ms,
+            2.0,
+            250ms
+        }
+    );
+
+    job.markRunning();
+    job.markFailed();
+
+    check(
+        job.getRetryDelay() == 250ms,
+        "Initial retry delay is capped at maxDelay"
+    );
+}
+
+void testDelayedRetryIsNotImmediatelyReady() {
+    std::cout << "\n--- Delayed Retry Readiness ---\n";
+
+    jobq::JobQueue queue;
+
+    auto delayedJob = std::make_shared<jobq::Job>(
+        10,
+        "EMAIL",
+        "delayed-retry",
+        jobq::JobPriority::Normal
+    );
+
+    const auto scheduledAt = Clock::now();
+
+    const bool accepted = queue.pushRetry(
+        delayedJob,
+        250ms
+    );
+
+    check(
+        accepted,
+        "Queue accepts a delayed retry"
+    );
+
+    check(
+        queue.size() == 1,
+        "Queue size includes delayed retries"
+    );
+
+    check(
+        !queue.empty(),
+        "Queue is not empty while a retry is delayed"
+    );
+
+    check(
+        queue.tryPop() == nullptr,
+        "tryPop does not return a retry before its deadline"
+    );
+
+    const auto poppedJob = queue.waitAndPop();
+    const auto elapsed = Clock::now() - scheduledAt;
+
+    check(
+        poppedJob == delayedJob,
+        "waitAndPop returns the delayed job when ready"
+    );
+
+    check(
+        elapsed >= 240ms,
+        "Delayed job is not returned substantially before its deadline"
+    );
+
+    check(
+        queue.empty(),
+        "Queue becomes empty after delayed retry is retrieved"
     );
 }
 
 void testReadyJobsAreNotBlockedByDelayedRetry() {
-    std::cout << "\n--- Delayed Retry Does Not Block Ready Jobs ---\n";
+    std::cout << "\n--- Ready Jobs Are Not Blocked ---\n";
 
     jobq::JobQueue queue;
     jobq::JobManager manager(queue);
@@ -149,7 +308,7 @@ void testReadyJobsAreNotBlockedByDelayedRetry() {
 
     executor.registerHandler(
         "FLAKY",
-        [&](const jobq::Job& job) {
+        [&](const jobq::Job&) {
             const int attempt =
                 flakyAttempts.fetch_add(1) + 1;
 
@@ -206,7 +365,7 @@ void testReadyJobsAreNotBlockedByDelayedRetry() {
     check(
         retryStatus.has_value() &&
             *retryStatus == jobq::JobStatus::Completed,
-        "Delayed retry eventually succeeds"
+        "Transiently failing job eventually completes"
     );
 
     check(
@@ -229,22 +388,131 @@ void testReadyJobsAreNotBlockedByDelayedRetry() {
         firstFailureAt != Clock::time_point{} &&
             secondAttemptAt != Clock::time_point{} &&
             actualDelay >= 250ms,
-        "Retry waits approximately the configured backoff delay"
+        "Retry observes the configured backoff delay"
     );
 
     check(
         retryJob->getAttemptsMade() == 2,
-        "Retry attempt count remains correct"
+        "Retry attempt count is correct"
     );
 
     check(
         retryJob->getPriority() == jobq::JobPriority::High,
-        "Retry preserves original priority"
+        "Retry preserves its original priority"
     );
 
     check(
         queue.isClosed() && queue.empty(),
         "Shutdown drains delayed retries"
+    );
+}
+
+void testDelayedRetriesRespectPriority() {
+    std::cout << "\n--- Priority Among Ready Retries ---\n";
+
+    jobq::JobQueue queue;
+
+    auto lowPriorityJob = std::make_shared<jobq::Job>(
+        20,
+        "EMAIL",
+        "low-priority-retry",
+        jobq::JobPriority::Low
+    );
+
+    auto highPriorityJob = std::make_shared<jobq::Job>(
+        21,
+        "EMAIL",
+        "high-priority-retry",
+        jobq::JobPriority::High
+    );
+
+    const bool lowAccepted =
+        queue.pushRetry(lowPriorityJob, 80ms);
+
+    const bool highAccepted =
+        queue.pushRetry(highPriorityJob, 100ms);
+
+    check(
+        lowAccepted && highAccepted,
+        "Queue accepts delayed retries with different priorities"
+    );
+
+    check(
+        queue.size() == 2,
+        "Both delayed retries are counted"
+    );
+
+    // Wait until both retry deadlines are comfortably past.
+    std::this_thread::sleep_for(180ms);
+
+    check(
+        queue.tryPop() == highPriorityJob,
+        "HIGH priority wins when both retries are ready"
+    );
+
+    check(
+        queue.tryPop() == lowPriorityJob,
+        "LOW priority retry remains queued afterward"
+    );
+
+    check(
+        queue.empty(),
+        "Both ready retries are drained"
+    );
+}
+
+void testClosedQueueDrainsDelayedRetry() {
+    std::cout << "\n--- Shutdown With Delayed Retry ---\n";
+
+    jobq::JobQueue queue;
+
+    queue.close();
+
+    auto retryJob = std::make_shared<jobq::Job>(
+        30,
+        "EMAIL",
+        "retry-after-close",
+        jobq::JobPriority::Normal
+    );
+
+    const auto scheduledAt = Clock::now();
+
+    check(
+        !queue.push(std::make_shared<jobq::Job>(
+            31,
+            "EMAIL",
+            "external-submission-after-close"
+        )),
+        "Closed queue rejects external submissions"
+    );
+
+    check(
+        queue.pushRetry(retryJob, 120ms),
+        "Internal retry is accepted after queue closure"
+    );
+
+    auto poppedJob = queue.waitAndPop();
+
+    const auto elapsed = Clock::now() - scheduledAt;
+
+    check(
+        poppedJob == retryJob,
+        "Closed queue returns the scheduled retry"
+    );
+
+    check(
+        elapsed >= 110ms,
+        "Closed queue waits for the retry deadline"
+    );
+
+    check(
+        queue.waitAndPop() == nullptr,
+        "Closed queue exits after all work is drained"
+    );
+
+    check(
+        queue.empty(),
+        "Closed queue is empty after draining"
     );
 }
 
@@ -254,7 +522,7 @@ void testZeroDelayRetry() {
     jobq::JobQueue queue;
 
     auto job = std::make_shared<jobq::Job>(
-        10,
+        40,
         "EMAIL",
         "zero-delay-retry"
     );
@@ -279,13 +547,17 @@ void testZeroDelayRetry() {
 
 int main() {
     std::cout << "========================================\n";
-    std::cout << "       Job Retry Backoff Tests          \n";
+    std::cout << "       Job Retry Regression Tests       \n";
     std::cout << "========================================\n";
 
     try {
         testExponentialDelayCalculation();
-        testInvalidRetryPolicy();
+        testRetryPolicyValidation();
+        testMaximumDelaySmallerThanInitialDelay();
+        testDelayedRetryIsNotImmediatelyReady();
         testReadyJobsAreNotBlockedByDelayedRetry();
+        testDelayedRetriesRespectPriority();
+        testClosedQueueDrainsDelayedRetry();
         testZeroDelayRetry();
     } catch (const std::exception& exception) {
         ++testsFailed;
