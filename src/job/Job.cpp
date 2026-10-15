@@ -45,12 +45,14 @@ Job::Job(
     uint64_t id,
     std::string type,
     std::string payload,
-    JobPriority priority
+    JobPriority priority,
+    RetryPolicy retryPolicy
 )
     : id_(id),
       type_(std::move(type)),
       payload_(std::move(payload)),
       priority_(priority),
+      retryPolicy_(retryPolicy),
       status_(JobStatus::Pending) {}
 
 uint64_t Job::getId() const {
@@ -69,9 +71,46 @@ JobPriority Job::getPriority() const {
     return priority_;
 }
 
+RetryPolicy Job::getRetryPolicy() const {
+    return retryPolicy_;
+}
+
+std::size_t Job::getAttemptsMade() const {
+    std::lock_guard<std::mutex> lock(statusMutex_);
+    return attemptsMade_;
+}
+
 JobStatus Job::getStatus() const {
     std::lock_guard<std::mutex> lock(statusMutex_);
     return status_;
+}
+
+bool Job::canRetry() const {
+    std::lock_guard<std::mutex> lock(statusMutex_);
+
+    return status_ == JobStatus::Failed &&
+           attemptsMade_ > 0 &&
+           attemptsMade_ <= retryPolicy_.maxRetries;
+}
+
+bool Job::prepareForRetry() {
+    std::lock_guard<std::mutex> lock(statusMutex_);
+
+    if (status_ != JobStatus::Failed) {
+        throw std::logic_error(
+            "Cannot prepare job for retry unless status is FAILED"
+        );
+    }
+
+    // maxRetries counts retries after the initial attempt.
+    // For example, maxRetries=2 permits 3 total attempts.
+    if (attemptsMade_ == 0 ||
+        attemptsMade_ > retryPolicy_.maxRetries) {
+        return false;
+    }
+
+    status_ = JobStatus::Pending;
+    return true;
 }
 
 void Job::transitionTo(
@@ -90,6 +129,11 @@ void Job::transitionTo(
     }
 
     status_ = newStatus;
+
+    // Each successful transition to RUNNING starts a new attempt.
+    if (newStatus == JobStatus::Running) {
+        ++attemptsMade_;
+    }
 }
 
 void Job::markRunning() {

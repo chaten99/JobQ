@@ -25,13 +25,15 @@ public:
     std::shared_ptr<Job> createJob(
         std::string type,
         std::string payload,
-        JobPriority priority = JobPriority::Normal
+        JobPriority priority = JobPriority::Normal,
+        RetryPolicy retryPolicy = {}
     );
 
     std::shared_ptr<Job> submit(
         std::string type,
         std::string payload,
-        JobPriority priority = JobPriority::Normal
+        JobPriority priority = JobPriority::Normal,
+        RetryPolicy retryPolicy = {}
     );
 
     std::shared_ptr<Job> getJob(uint64_t id) const;

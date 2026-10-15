@@ -9,7 +9,8 @@ namespace jobq {
 std::shared_ptr<Job> JobManager::createJob(
     std::string type,
     std::string payload,
-    JobPriority priority
+    JobPriority priority,
+    RetryPolicy retryPolicy
 ) {
     const auto id = nextId_.fetch_add(
         1,
@@ -20,7 +21,8 @@ std::shared_ptr<Job> JobManager::createJob(
         id,
         std::move(type),
         std::move(payload),
-        priority
+        priority,
+        retryPolicy
     );
 
     {
@@ -34,18 +36,21 @@ std::shared_ptr<Job> JobManager::createJob(
 std::shared_ptr<Job> JobManager::submit(
     std::string type,
     std::string payload,
-    JobPriority priority
+    JobPriority priority,
+    RetryPolicy retryPolicy
 ) {
     auto job = createJob(
         std::move(type),
         std::move(payload),
-        priority
+        priority,
+        retryPolicy
     );
 
     if (queue_.push(job)) {
         return job;
     }
 
+    // Remove the registry entry if submission is rejected.
     {
         std::unique_lock<std::shared_mutex> lock(registryMutex_);
         jobs_.erase(job->getId());

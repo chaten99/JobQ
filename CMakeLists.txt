@@ -81,4 +81,22 @@ if(BUILD_TESTING)
         NAME jobq_priority_scheduling
         COMMAND jobq_priority_test
     )
+
+    add_executable(jobq_retry_policy_test
+        tests/job_retry_policy_test.cpp
+        ${JOBQ_CORE_SOURCES}
+    )
+
+    target_include_directories(jobq_retry_policy_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(jobq_retry_policy_test PRIVATE
+        Threads::Threads
+    )
+
+    add_test(
+        NAME jobq_retry_policy
+        COMMAND jobq_retry_policy_test
+    )
 endif()

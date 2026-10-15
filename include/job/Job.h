@@ -1,6 +1,6 @@
-
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <mutex>
 #include <string>
@@ -22,6 +22,10 @@ enum class JobPriority {
     High = 2
 };
 
+struct RetryPolicy {
+    std::size_t maxRetries{0};
+};
+
 std::string_view toString(JobStatus status);
 std::string_view toString(JobPriority priority);
 
@@ -31,7 +35,8 @@ public:
         uint64_t id,
         std::string type,
         std::string payload,
-        JobPriority priority = JobPriority::Normal
+        JobPriority priority = JobPriority::Normal,
+        RetryPolicy retryPolicy = {}
     );
 
     uint64_t getId() const;
@@ -42,7 +47,15 @@ public:
 
     JobPriority getPriority() const;
 
+    RetryPolicy getRetryPolicy() const;
+
+    std::size_t getAttemptsMade() const;
+
     JobStatus getStatus() const;
+
+    bool canRetry() const;
+
+    bool prepareForRetry();
 
     void markRunning();
 
@@ -61,7 +74,11 @@ private:
     uint64_t id_;
     std::string type_;
     std::string payload_;
+
     JobPriority priority_;
+    RetryPolicy retryPolicy_;
+
+    std::size_t attemptsMade_{0};
 
     mutable std::mutex statusMutex_;
     JobStatus status_;
