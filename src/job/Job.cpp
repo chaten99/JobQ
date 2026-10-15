@@ -1,7 +1,6 @@
 #include "job/Job.h"
 
 #include <stdexcept>
-#include <string>
 #include <utility>
 
 namespace jobq {
@@ -27,18 +26,34 @@ std::string_view toString(JobStatus status) {
     return "UNKNOWN";
 }
 
+std::string_view toString(JobPriority priority) {
+    switch (priority) {
+        case JobPriority::Low:
+            return "LOW";
+
+        case JobPriority::Normal:
+            return "NORMAL";
+
+        case JobPriority::High:
+            return "HIGH";
+    }
+
+    return "UNKNOWN";
+}
+
 Job::Job(
-    std::uint64_t id,
+    uint64_t id,
     std::string type,
-    std::string payload
+    std::string payload,
+    JobPriority priority
 )
     : id_(id),
       type_(std::move(type)),
       payload_(std::move(payload)),
-      status_(JobStatus::Pending) {
-}
+      priority_(priority),
+      status_(JobStatus::Pending) {}
 
-std::uint64_t Job::getId() const {
+uint64_t Job::getId() const {
     return id_;
 }
 
@@ -48,6 +63,10 @@ const std::string& Job::getType() const {
 
 const std::string& Job::getPayload() const {
     return payload_;
+}
+
+JobPriority Job::getPriority() const {
+    return priority_;
 }
 
 JobStatus Job::getStatus() const {
@@ -101,4 +120,4 @@ void Job::markCancelled() {
     );
 }
 
-} // namespace jobq
+}

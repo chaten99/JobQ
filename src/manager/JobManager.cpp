@@ -8,7 +8,8 @@ namespace jobq {
 
 std::shared_ptr<Job> JobManager::createJob(
     std::string type,
-    std::string payload
+    std::string payload,
+    JobPriority priority
 ) {
     const auto id = nextId_.fetch_add(
         1,
@@ -18,7 +19,8 @@ std::shared_ptr<Job> JobManager::createJob(
     auto job = std::make_shared<Job>(
         id,
         std::move(type),
-        std::move(payload)
+        std::move(payload),
+        priority
     );
 
     {
@@ -31,18 +33,19 @@ std::shared_ptr<Job> JobManager::createJob(
 
 std::shared_ptr<Job> JobManager::submit(
     std::string type,
-    std::string payload
+    std::string payload,
+    JobPriority priority
 ) {
     auto job = createJob(
         std::move(type),
-        std::move(payload)
+        std::move(payload),
+        priority
     );
 
     if (queue_.push(job)) {
         return job;
     }
 
-    // The queue rejected the job, so remove its registry entry.
     {
         std::unique_lock<std::shared_mutex> lock(registryMutex_);
         jobs_.erase(job->getId());
@@ -56,7 +59,7 @@ std::shared_ptr<Job> JobManager::submit(
 std::shared_ptr<Job> JobManager::getJob(uint64_t id) const {
     std::shared_lock<std::shared_mutex> lock(registryMutex_);
 
-    auto it = jobs_.find(id);
+    const auto it = jobs_.find(id);
 
     if (it == jobs_.end()) {
         return nullptr;
@@ -77,7 +80,7 @@ std::optional<JobStatus> JobManager::getStatus(
     return job->getStatus();
 }
 
-size_t JobManager::totalJobs() const {
+std::size_t JobManager::totalJobs() const {
     std::shared_lock<std::shared_mutex> lock(registryMutex_);
 
     return jobs_.size();

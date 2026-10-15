@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include <cstdint>
@@ -15,21 +16,31 @@ enum class JobStatus {
     Cancelled
 };
 
+enum class JobPriority {
+    Low = 0,
+    Normal = 1,
+    High = 2
+};
+
 std::string_view toString(JobStatus status);
+std::string_view toString(JobPriority priority);
 
 class Job {
 public:
     Job(
-        std::uint64_t id,
+        uint64_t id,
         std::string type,
-        std::string payload
+        std::string payload,
+        JobPriority priority = JobPriority::Normal
     );
 
-    std::uint64_t getId() const;
+    uint64_t getId() const;
 
     const std::string& getType() const;
 
     const std::string& getPayload() const;
+
+    JobPriority getPriority() const;
 
     JobStatus getStatus() const;
 
@@ -47,12 +58,13 @@ private:
         JobStatus newStatus
     );
 
-    std::uint64_t id_;
+    uint64_t id_;
     std::string type_;
     std::string payload_;
+    JobPriority priority_;
 
     mutable std::mutex statusMutex_;
     JobStatus status_;
 };
 
-} // namespace jobq
+}

@@ -63,4 +63,22 @@ if(BUILD_TESTING)
         NAME jobq_manager_lifecycle
         COMMAND jobq_manager_test
     )
+
+    add_executable(jobq_priority_test
+        tests/job_priority_test.cpp
+        ${JOBQ_CORE_SOURCES}
+    )
+
+    target_include_directories(jobq_priority_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(jobq_priority_test PRIVATE
+        Threads::Threads
+    )
+
+    add_test(
+        NAME jobq_priority_scheduling
+        COMMAND jobq_priority_test
+    )
 endif()

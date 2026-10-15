@@ -24,19 +24,21 @@ public:
 
     std::shared_ptr<Job> createJob(
         std::string type,
-        std::string payload
+        std::string payload,
+        JobPriority priority = JobPriority::Normal
     );
 
     std::shared_ptr<Job> submit(
         std::string type,
-        std::string payload
+        std::string payload,
+        JobPriority priority = JobPriority::Normal
     );
 
     std::shared_ptr<Job> getJob(uint64_t id) const;
 
     std::optional<JobStatus> getStatus(uint64_t id) const;
 
-    size_t totalJobs() const;
+    std::size_t totalJobs() const;
 
 private:
     JobQueue& queue_;

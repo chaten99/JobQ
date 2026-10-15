@@ -1,5 +1,7 @@
 #include "queue/JobQueue.h"
 
+#include <utility>
+
 namespace jobq {
 
 bool JobQueue::push(std::shared_ptr<Job> job) {
@@ -14,10 +16,16 @@ bool JobQueue::push(std::shared_ptr<Job> job) {
             return false;
         }
 
-        jobs_.push(std::move(job));
+        jobs_.push(
+            QueueEntry{
+                std::move(job),
+                nextSequence_++
+            }
+        );
     }
 
     condition_.notify_one();
+
     return true;
 }
 
@@ -28,7 +36,7 @@ std::shared_ptr<Job> JobQueue::tryPop() {
         return nullptr;
     }
 
-    auto job = std::move(jobs_.front());
+    auto job = jobs_.top().job;
     jobs_.pop();
 
     return job;
@@ -37,7 +45,7 @@ std::shared_ptr<Job> JobQueue::tryPop() {
 std::shared_ptr<Job> JobQueue::waitAndPop() {
     std::unique_lock<std::mutex> lock(mutex_);
 
-    condition_.wait(lock, [this] {
+    condition_.wait(lock, [this]() {
         return closed_ || !jobs_.empty();
     });
 
@@ -45,7 +53,7 @@ std::shared_ptr<Job> JobQueue::waitAndPop() {
         return nullptr;
     }
 
-    auto job = std::move(jobs_.front());
+    auto job = jobs_.top().job;
     jobs_.pop();
 
     return job;
@@ -75,4 +83,4 @@ std::size_t JobQueue::size() const {
     return jobs_.size();
 }
 
-} // namespace jobq
+}
