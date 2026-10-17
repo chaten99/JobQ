@@ -173,4 +173,22 @@ if(BUILD_TESTING)
         NAME jobq_file_storage
         COMMAND jobq_file_storage_test
     )
+
+    add_executable(jobq_manager_persistence_test
+        tests/job_manager_persistence_test.cpp
+        ${JOBQ_CORE_SOURCES}
+    )
+
+    target_include_directories(jobq_manager_persistence_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(jobq_manager_persistence_test PRIVATE
+        Threads::Threads
+    )
+
+    add_test(
+        NAME jobq_manager_persistence
+        COMMAND jobq_manager_persistence_test
+    )
 endif()

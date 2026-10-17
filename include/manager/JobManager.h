@@ -1,3 +1,4 @@
+
 #pragma once
 
 #include <atomic>
@@ -11,13 +12,18 @@
 
 #include "job/Job.h"
 #include "queue/JobQueue.h"
+#include "storage/JobStorage.h"
 
 namespace jobq {
 
 class JobManager {
 public:
-    explicit JobManager(JobQueue& queue)
-        : queue_(queue) {}
+    explicit JobManager(JobQueue& queue);
+
+    JobManager(
+        JobQueue& queue,
+        std::shared_ptr<JobStorage> storage
+    );
 
     JobManager(const JobManager&) = delete;
     JobManager& operator=(const JobManager&) = delete;
@@ -43,7 +49,14 @@ public:
     std::size_t totalJobs() const;
 
 private:
+    void restoreStoredJobs();
+
+    void persistSnapshot(const JobSnapshot& snapshot) const;
+
+    JobStateObserver createStateObserver() const;
+
     JobQueue& queue_;
+    std::shared_ptr<JobStorage> storage_;
 
     std::atomic<uint64_t> nextId_{1};
 
