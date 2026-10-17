@@ -16,6 +16,7 @@ set(JOBQ_CORE_SOURCES
     src/worker/WorkerPool.cpp
     src/manager/JobManager.cpp
     src/storage/JobRecord.cpp
+    src/storage/FileJobStorage.cpp
 )
 
 add_executable(jobq
@@ -153,5 +154,23 @@ if(BUILD_TESTING)
     add_test(
         NAME jobq_storage_record
         COMMAND jobq_storage_record_test
+    )
+
+    add_executable(jobq_file_storage_test
+        tests/job_file_storage_test.cpp
+        ${JOBQ_CORE_SOURCES}
+    )
+
+    target_include_directories(jobq_file_storage_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(jobq_file_storage_test PRIVATE
+        Threads::Threads
+    )
+
+    add_test(
+        NAME jobq_file_storage
+        COMMAND jobq_file_storage_test
     )
 endif()
