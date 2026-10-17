@@ -15,6 +15,7 @@ set(JOBQ_CORE_SOURCES
     src/worker/Worker.cpp
     src/worker/WorkerPool.cpp
     src/manager/JobManager.cpp
+    src/storage/JobRecord.cpp
 )
 
 add_executable(jobq
@@ -134,5 +135,23 @@ if(BUILD_TESTING)
     add_test(
         NAME jobq_retry_backoff
         COMMAND jobq_retry_backoff_test
+    )
+
+    add_executable(jobq_storage_record_test
+        tests/job_record_test.cpp
+        ${JOBQ_CORE_SOURCES}
+    )
+
+    target_include_directories(jobq_storage_record_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(jobq_storage_record_test PRIVATE
+        Threads::Threads
+    )
+
+    add_test(
+        NAME jobq_storage_record
+        COMMAND jobq_storage_record_test
     )
 endif()
