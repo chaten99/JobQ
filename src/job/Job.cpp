@@ -1,7 +1,9 @@
+
 #include "job/Job.h"
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 
@@ -11,16 +13,12 @@ std::string_view toString(JobStatus status) {
     switch (status) {
         case JobStatus::Pending:
             return "PENDING";
-
         case JobStatus::Running:
             return "RUNNING";
-
         case JobStatus::Completed:
             return "COMPLETED";
-
         case JobStatus::Failed:
             return "FAILED";
-
         case JobStatus::Cancelled:
             return "CANCELLED";
     }
@@ -32,10 +30,8 @@ std::string_view toString(JobPriority priority) {
     switch (priority) {
         case JobPriority::Low:
             return "LOW";
-
         case JobPriority::Normal:
             return "NORMAL";
-
         case JobPriority::High:
             return "HIGH";
     }
@@ -48,24 +44,30 @@ Job::Job(
     std::string type,
     std::string payload,
     JobPriority priority,
-    RetryPolicy retryPolicy
+    RetryPolicy retryPolicy,
+    JobStatus initialStatus,
+    std::size_t initialAttemptsMade,
+    JobStateObserver stateObserver
 )
     : id_(id),
       type_(std::move(type)),
       payload_(std::move(payload)),
       priority_(priority),
       retryPolicy_(retryPolicy),
-      status_(JobStatus::Pending) {
+      attemptsMade_(initialAttemptsMade),
+      status_(initialStatus),
+      stateObserver_(std::move(stateObserver)) {
 
-    if (retryPolicy_.initialDelay.count() < 0) {
+    if (id_ == 0) {
         throw std::invalid_argument(
-            "Retry initial delay cannot be negative"
+            "Job ID must be greater than zero"
         );
     }
 
-    if (retryPolicy_.maxDelay.count() < 0) {
+    if (retryPolicy_.initialDelay.count() < 0 ||
+        retryPolicy_.maxDelay.count() < 0) {
         throw std::invalid_argument(
-            "Retry maximum delay cannot be negative"
+            "Retry delays cannot be negative"
         );
     }
 
@@ -73,6 +75,22 @@ Job::Job(
         retryPolicy_.multiplier < 1.0) {
         throw std::invalid_argument(
             "Retry multiplier must be finite and at least 1.0"
+        );
+    }
+
+    if ((status_ == JobStatus::Running ||
+         status_ == JobStatus::Completed ||
+         status_ == JobStatus::Failed) &&
+        attemptsMade_ == 0) {
+        throw std::invalid_argument(
+            "Running, completed, and failed jobs must have an attempt"
+        );
+    }
+
+    if (toString(status_) == "UNKNOWN" ||
+        toString(priority_) == "UNKNOWN") {
+        throw std::invalid_argument(
+            "Invalid initial job status or priority"
         );
     }
 }
@@ -107,6 +125,20 @@ JobStatus Job::getStatus() const {
     return status_;
 }
 
+JobSnapshot Job::snapshot() const {
+    std::lock_guard<std::mutex> lock(statusMutex_);
+
+    return JobSnapshot{
+        id_,
+        type_,
+        payload_,
+        priority_,
+        status_,
+        retryPolicy_,
+        attemptsMade_
+    };
+}
+
 bool Job::canRetry() const {
     std::lock_guard<std::mutex> lock(statusMutex_);
 
@@ -131,7 +163,7 @@ std::chrono::milliseconds Job::getRetryDelay() const {
     if (initialDelay <= 0.0 || maximumDelay <= 0.0) {
         return std::chrono::milliseconds{0};
     }
-    
+
     double delay = std::min(initialDelay, maximumDelay);
 
     const std::size_t exponent = attemptsMade_ - 1;
@@ -169,7 +201,22 @@ bool Job::prepareForRetry() {
         return false;
     }
 
+    if (stateObserver_) {
+        stateObserver_(
+            JobSnapshot{
+                id_,
+                type_,
+                payload_,
+                priority_,
+                JobStatus::Pending,
+                retryPolicy_,
+                attemptsMade_
+            }
+        );
+    }
+
     status_ = JobStatus::Pending;
+
     return true;
 }
 
@@ -188,11 +235,35 @@ void Job::transitionTo(
         );
     }
 
-    status_ = newStatus;
+    std::size_t nextAttempts = attemptsMade_;
 
     if (newStatus == JobStatus::Running) {
-        ++attemptsMade_;
+        if (attemptsMade_ ==
+            std::numeric_limits<std::size_t>::max()) {
+            throw std::overflow_error(
+                "Job attempt counter overflow"
+            );
+        }
+
+        ++nextAttempts;
     }
+
+    if (stateObserver_) {
+        stateObserver_(
+            JobSnapshot{
+                id_,
+                type_,
+                payload_,
+                priority_,
+                newStatus,
+                retryPolicy_,
+                nextAttempts
+            }
+        );
+    }
+
+    status_ = newStatus;
+    attemptsMade_ = nextAttempts;
 }
 
 void Job::markRunning() {
