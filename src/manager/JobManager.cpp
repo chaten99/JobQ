@@ -4,7 +4,9 @@
 #include <limits>
 #include <mutex>
 #include <stdexcept>
+#include <unordered_set>
 #include <utility>
+#include <vector>
 
 #include "storage/JobRecord.h"
 
@@ -38,6 +40,12 @@ JobStateObserver makeObserver(
     };
 }
 
+bool isExecutionState(JobStatus status) {
+    return status == JobStatus::Running ||
+           status == JobStatus::Completed ||
+           status == JobStatus::Failed;
+}
+
 } // namespace
 
 JobManager::JobManager(JobQueue& queue)
@@ -62,6 +70,12 @@ JobManager::JobManager(
 void JobManager::restoreStoredJobs() {
     const auto records = storage_->loadAll();
 
+    std::unordered_set<uint64_t> seenIds;
+    seenIds.reserve(records.size());
+
+    std::vector<std::shared_ptr<Job>> jobsToSchedule;
+    jobsToSchedule.reserve(records.size());
+
     uint64_t nextId = 1;
 
     for (const auto& record : records) {
@@ -71,10 +85,31 @@ void JobManager::restoreStoredJobs() {
             );
         }
 
-        if (record.id ==
-            std::numeric_limits<uint64_t>::max()) {
+        if (record.id == std::numeric_limits<uint64_t>::max()) {
             throw std::overflow_error(
                 "Stored job ID prevents generating another unique ID"
+            );
+        }
+
+        if (!seenIds.insert(record.id).second) {
+            throw std::runtime_error(
+                "Storage returned duplicate job IDs"
+            );
+        }
+
+        if ((record.status == JobStatus::Pending ||
+             record.status == JobStatus::Cancelled) &&
+            record.attemptsMade > record.retryPolicy.maxRetries) {
+            throw std::runtime_error(
+                "Stored job has an invalid attempt count for its status"
+            );
+        }
+
+        if (isExecutionState(record.status) &&
+            record.attemptsMade > record.retryPolicy.maxRetries &&
+            record.attemptsMade - record.retryPolicy.maxRetries > 1) {
+            throw std::runtime_error(
+                "Stored job exceeds its allowed execution attempts"
             );
         }
 
@@ -90,15 +125,36 @@ void JobManager::restoreStoredJobs() {
         );
 
         const auto [iterator, inserted] =
-            jobs_.emplace(record.id, std::move(job));
+            jobs_.emplace(record.id, job);
 
         if (!inserted) {
             throw std::runtime_error(
-                "Storage returned duplicate job IDs"
+                "Failed to register a recovered job"
             );
         }
 
         (void)iterator;
+
+        if (job->getStatus() == JobStatus::Running) {
+            job->markFailed();
+        }
+
+
+        if (job->getStatus() == JobStatus::Failed &&
+            job->canRetry()) {
+
+            const bool prepared = job->prepareForRetry();
+
+            if (!prepared) {
+                throw std::runtime_error(
+                    "Retryable recovered job could not be prepared"
+                );
+            }
+        }
+
+        if (job->getStatus() == JobStatus::Pending) {
+            jobsToSchedule.push_back(job);
+        }
 
         if (record.id >= nextId) {
             nextId = record.id + 1;
@@ -106,6 +162,25 @@ void JobManager::restoreStoredJobs() {
     }
 
     nextId_.store(nextId, std::memory_order_relaxed);
+
+    for (const auto& job : jobsToSchedule) {
+        bool accepted = false;
+
+        if (job->getAttemptsMade() == 0) {
+            accepted = queue_.push(job);
+        } else {
+            accepted = queue_.pushRetry(
+                job,
+                job->getRetryDelay()
+            );
+        }
+
+        if (!accepted) {
+            throw std::runtime_error(
+                "Failed to enqueue a recovered job"
+            );
+        }
+    }
 }
 
 JobStateObserver JobManager::createStateObserver() const {
@@ -180,7 +255,6 @@ std::shared_ptr<Job> JobManager::submit(
     } catch (...) {
         std::unique_lock<std::shared_mutex> lock(registryMutex_);
         jobs_.erase(job->getId());
-
         throw;
     }
 
@@ -220,7 +294,6 @@ std::optional<JobStatus> JobManager::getStatus(
 
 std::size_t JobManager::totalJobs() const {
     std::shared_lock<std::shared_mutex> lock(registryMutex_);
-
     return jobs_.size();
 }
 

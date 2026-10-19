@@ -7,6 +7,8 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <thread>
+#include <utility>
 #include <vector>
 
 #include "job/Job.h"
@@ -89,7 +91,8 @@ void testPersistedLifecycleAndRestart() {
     {
         jobq::JobQueue queue;
 
-        auto storage = std::make_shared<jobq::FileJobStorage>(path);
+        auto storage =
+            std::make_shared<jobq::FileJobStorage>(path);
 
         jobq::JobManager manager(queue, storage);
 
@@ -188,7 +191,7 @@ void testPersistedLifecycleAndRestart() {
 
         check(
             restartedQueue.empty(),
-            "Commit 3 restores registry records without re-enqueuing jobs"
+            "Completed jobs are restored without being re-enqueued"
         );
     }
 }
@@ -204,7 +207,9 @@ void testPendingRetryStateIsPersisted() {
     {
         jobq::JobQueue queue;
 
-        auto storage = std::make_shared<jobq::FileJobStorage>(path);
+        auto storage =
+            std::make_shared<jobq::FileJobStorage>(path);
+
         jobq::JobManager manager(queue, storage);
 
         auto job = manager.submit(
@@ -250,7 +255,8 @@ void testPendingRetryStateIsPersisted() {
     {
         jobq::JobQueue restartedQueue;
 
-        auto storage = std::make_shared<jobq::FileJobStorage>(path);
+        auto storage =
+            std::make_shared<jobq::FileJobStorage>(path);
 
         jobq::JobManager restartedManager(
             restartedQueue,
@@ -272,8 +278,20 @@ void testPendingRetryStateIsPersisted() {
         );
 
         check(
+            restartedQueue.size() == 1,
+            "Pending retry is scheduled for recovery"
+        );
+
+        std::this_thread::sleep_for(60ms);
+
+        check(
+            restartedQueue.tryPop() == restored,
+            "Recovered retry becomes ready after its backoff delay"
+        );
+
+        check(
             restartedQueue.empty(),
-            "Pending retry is not scheduled until the recovery phase"
+            "Recovered retry is removed from the queue when retrieved"
         );
     }
 }
@@ -289,7 +307,9 @@ void testRejectedSubmissionPersistsCancellation() {
         jobq::JobQueue queue;
         queue.close();
 
-        auto storage = std::make_shared<jobq::FileJobStorage>(path);
+        auto storage =
+            std::make_shared<jobq::FileJobStorage>(path);
+
         jobq::JobManager manager(queue, storage);
 
         bool rejected = false;

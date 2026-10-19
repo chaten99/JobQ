@@ -191,4 +191,22 @@ if(BUILD_TESTING)
         NAME jobq_manager_persistence
         COMMAND jobq_manager_persistence_test
     )
+
+    add_executable(jobq_recovery_test
+        tests/job_recovery_test.cpp
+        ${JOBQ_CORE_SOURCES}
+    )
+
+    target_include_directories(jobq_recovery_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(jobq_recovery_test PRIVATE
+        Threads::Threads
+    )
+
+    add_test(
+        NAME jobq_crash_recovery
+        COMMAND jobq_recovery_test
+    )
 endif()
