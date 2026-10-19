@@ -15,6 +15,8 @@ set(JOBQ_CORE_SOURCES
     src/worker/Worker.cpp
     src/worker/WorkerPool.cpp
     src/manager/JobManager.cpp
+    src/storage/JobRecord.cpp
+    src/storage/FileJobStorage.cpp
 )
 
 add_executable(jobq
@@ -134,5 +136,95 @@ if(BUILD_TESTING)
     add_test(
         NAME jobq_retry_backoff
         COMMAND jobq_retry_backoff_test
+    )
+
+    add_executable(jobq_storage_record_test
+        tests/job_record_test.cpp
+        ${JOBQ_CORE_SOURCES}
+    )
+
+    target_include_directories(jobq_storage_record_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(jobq_storage_record_test PRIVATE
+        Threads::Threads
+    )
+
+    add_test(
+        NAME jobq_storage_record
+        COMMAND jobq_storage_record_test
+    )
+
+    add_executable(jobq_file_storage_test
+        tests/job_file_storage_test.cpp
+        ${JOBQ_CORE_SOURCES}
+    )
+
+    target_include_directories(jobq_file_storage_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(jobq_file_storage_test PRIVATE
+        Threads::Threads
+    )
+
+    add_test(
+        NAME jobq_file_storage
+        COMMAND jobq_file_storage_test
+    )
+
+    add_executable(jobq_manager_persistence_test
+        tests/job_manager_persistence_test.cpp
+        ${JOBQ_CORE_SOURCES}
+    )
+
+    target_include_directories(jobq_manager_persistence_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(jobq_manager_persistence_test PRIVATE
+        Threads::Threads
+    )
+
+    add_test(
+        NAME jobq_manager_persistence
+        COMMAND jobq_manager_persistence_test
+    )
+
+    add_executable(jobq_recovery_test
+        tests/job_recovery_test.cpp
+        ${JOBQ_CORE_SOURCES}
+    )
+
+    target_include_directories(jobq_recovery_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(jobq_recovery_test PRIVATE
+        Threads::Threads
+    )
+
+    add_test(
+        NAME jobq_crash_recovery
+        COMMAND jobq_recovery_test
+    )
+
+    add_executable(jobq_persistence_recovery_regression_test
+        tests/job_persistence_recovery_regression_test.cpp
+        ${JOBQ_CORE_SOURCES}
+    )
+
+    target_include_directories(jobq_persistence_recovery_regression_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(jobq_persistence_recovery_regression_test PRIVATE
+        Threads::Threads
+    )
+
+    add_test(
+        NAME jobq_persistence_recovery_regression
+        COMMAND jobq_persistence_recovery_regression_test
     )
 endif()

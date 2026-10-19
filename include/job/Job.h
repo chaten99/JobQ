@@ -1,8 +1,10 @@
+
 #pragma once
 
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -26,11 +28,22 @@ enum class JobPriority {
 struct RetryPolicy {
     std::size_t maxRetries{0};
     std::chrono::milliseconds initialDelay{100};
-
     double multiplier{2.0};
-
     std::chrono::milliseconds maxDelay{5000};
 };
+
+struct JobSnapshot {
+    uint64_t id;
+    std::string type;
+    std::string payload;
+    JobPriority priority;
+    JobStatus status;
+    RetryPolicy retryPolicy;
+    std::size_t attemptsMade;
+};
+
+using JobStateObserver =
+    std::function<void(const JobSnapshot&)>;
 
 std::string_view toString(JobStatus status);
 std::string_view toString(JobPriority priority);
@@ -42,7 +55,10 @@ public:
         std::string type,
         std::string payload,
         JobPriority priority = JobPriority::Normal,
-        RetryPolicy retryPolicy = {}
+        RetryPolicy retryPolicy = {},
+        JobStatus initialStatus = JobStatus::Pending,
+        std::size_t initialAttemptsMade = 0,
+        JobStateObserver stateObserver = {}
     );
 
     uint64_t getId() const;
@@ -58,6 +74,8 @@ public:
     std::size_t getAttemptsMade() const;
 
     JobStatus getStatus() const;
+
+    JobSnapshot snapshot() const;
 
     bool canRetry() const;
 
@@ -90,6 +108,8 @@ private:
 
     mutable std::mutex statusMutex_;
     JobStatus status_;
+
+    JobStateObserver stateObserver_;
 };
 
 }
