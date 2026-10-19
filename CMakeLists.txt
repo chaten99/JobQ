@@ -45,6 +45,15 @@ target_link_libraries(jobq_stress_test PRIVATE
     Threads::Threads
 )
 
+add_executable(jobq_cli
+    src/cli/main.cpp
+    src/cli/CommandLine.cpp
+)
+
+target_include_directories(jobq_cli PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
 include(CTest)
 
 if(BUILD_TESTING)
@@ -226,5 +235,19 @@ if(BUILD_TESTING)
     add_test(
         NAME jobq_persistence_recovery_regression
         COMMAND jobq_persistence_recovery_regression_test
+    )
+
+    add_executable(jobq_cli_test
+        tests/cli_foundation_test.cpp
+        src/cli/CommandLine.cpp
+    )
+
+    target_include_directories(jobq_cli_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    add_test(
+        NAME jobq_cli_foundation
+        COMMAND jobq_cli_test
     )
 endif()
