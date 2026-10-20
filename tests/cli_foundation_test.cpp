@@ -61,7 +61,7 @@ void testHelp() {
         usage.find("Usage:") != std::string::npos &&
             usage.find("submit") != std::string::npos &&
             usage.find("status") != std::string::npos,
-        "Usage text lists the CLI commands"
+        "Usage text lists CLI commands"
     );
 }
 
@@ -72,20 +72,14 @@ void testCommandRecognition() {
     std::string error;
 
     check(
-        jobq::cli::parseCommandLine(
-            {"submit"},
-            parsed,
-            error
-        ) && parsed.command == "submit",
+        jobq::cli::parseCommandLine({"submit"}, parsed, error) &&
+            parsed.command == "submit",
         "submit command is recognized"
     );
 
     check(
-        jobq::cli::parseCommandLine(
-            {"list"},
-            parsed,
-            error
-        ) && parsed.command == "list",
+        jobq::cli::parseCommandLine({"list"}, parsed, error) &&
+            parsed.command == "list",
         "list command is recognized"
     );
 
@@ -102,11 +96,8 @@ void testCommandRecognition() {
     );
 
     check(
-        jobq::cli::parseCommandLine(
-            {"run"},
-            parsed,
-            error
-        ) && parsed.command == "run",
+        jobq::cli::parseCommandLine({"run"}, parsed, error) &&
+            parsed.command == "run",
         "run command is recognized"
     );
 }
@@ -126,7 +117,9 @@ void testOptions() {
             "--priority",
             "high",
             "--retries",
-            "3"
+            "3",
+            "--storage",
+            "test/jobs.journal"
         },
         parsed,
         error
@@ -134,7 +127,7 @@ void testOptions() {
 
     check(
         parsedSubmit,
-        "Long options support both --key=value and --key value"
+        "Options support --key=value and --key value"
     );
 
     check(
@@ -151,6 +144,11 @@ void testOptions() {
         parsed.options["priority"] == "high" &&
             parsed.options["retries"] == "3",
         "Priority and retries options are parsed"
+    );
+
+    check(
+        parsed.options["storage"] == "test/jobs.journal",
+        "Global storage option is parsed"
     );
 
     check(
@@ -182,12 +180,9 @@ void testInvalidArguments() {
     std::string error;
 
     check(
-        !jobq::cli::parseCommandLine(
-            {},
-            parsed,
-            error
-        ) && !error.empty(),
-        "Missing command returns a parsing error"
+        !jobq::cli::parseCommandLine({}, parsed, error) &&
+            !error.empty(),
+        "Missing command returns an error"
     );
 
     check(
@@ -262,16 +257,11 @@ int main() {
         testInvalidArguments();
     } catch (const std::exception& exception) {
         ++testsFailed;
-
-        std::cerr
-            << "[FAIL] Unexpected exception: "
-            << exception.what()
-            << '\n';
+        std::cerr << "[FAIL] Unexpected exception: "
+                  << exception.what() << '\n';
     } catch (...) {
         ++testsFailed;
-
-        std::cerr
-            << "[FAIL] Unexpected non-standard exception\n";
+        std::cerr << "[FAIL] Unexpected non-standard exception\n";
     }
 
     std::cout << "\n========================================\n";

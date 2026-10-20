@@ -1,10 +1,7 @@
-
 #include "cli/CommandLine.h"
 
-#include <array>
+#include <string>
 #include <string_view>
-#include <unordered_set>
-#include <utility>
 
 namespace jobq::cli {
 
@@ -21,6 +18,10 @@ bool isAllowedOption(
     std::string_view command,
     std::string_view option
 ) {
+    if (option == "storage") {
+        return true;
+    }
+
     if (command == "submit") {
         return option == "type" ||
                option == "payload" ||
@@ -37,8 +38,6 @@ bool isAllowedOption(
         return option == "workers";
     }
 
-    // The status command takes a positional job ID in this
-    // initial command schema.
     return false;
 }
 
@@ -76,8 +75,7 @@ bool parseCommandLine(
     parsed.command = arguments.front();
 
     if (!isSupportedCommand(parsed.command)) {
-        errorMessage =
-            "Unknown command: " + parsed.command;
+        errorMessage = "Unknown command: " + parsed.command;
         return false;
     }
 
@@ -108,7 +106,6 @@ bool parseCommandLine(
                     errorMessage =
                         "Unknown option for command '" +
                         parsed.command + "': --" + optionName;
-
                     return false;
                 }
 
@@ -116,7 +113,6 @@ bool parseCommandLine(
                     arguments[index + 1].rfind("--", 0) == 0) {
                     errorMessage =
                         "Missing value for option --" + optionName;
-
                     return false;
                 }
 
@@ -141,7 +137,6 @@ bool parseCommandLine(
                     errorMessage =
                         "Unknown option for command '" +
                         parsed.command + "': --" + optionName;
-
                     return false;
                 }
             }
@@ -155,7 +150,6 @@ bool parseCommandLine(
             if (!inserted) {
                 errorMessage =
                     "Duplicate option: --" + optionName;
-
                 return false;
             }
 
@@ -167,7 +161,6 @@ bool parseCommandLine(
             errorMessage =
                 "Unknown short option: " + token +
                 ". Only -h is supported.";
-
             return false;
         }
 
@@ -186,22 +179,24 @@ std::string usageText() {
         "\n"
         "Commands:\n"
         "  submit --type TYPE --payload PAYLOAD "
-        "[--priority PRIORITY] [--retries COUNT]\n"
-        "      Submit a job.\n"
+        "[--priority PRIORITY] [--retries COUNT] "
+        "[--storage PATH]\n"
+        "      Persist a new job.\n"
         "\n"
-        "  list [--status STATUS] [--limit COUNT]\n"
+        "  list [--status STATUS] [--limit COUNT] [--storage PATH]\n"
         "      List stored jobs.\n"
         "\n"
-        "  status JOB_ID\n"
+        "  status JOB_ID [--storage PATH]\n"
         "      Inspect a job by ID.\n"
         "\n"
-        "  run [--workers COUNT]\n"
+        "  run [--workers COUNT] [--storage PATH]\n"
         "      Start job workers.\n"
         "\n"
         "General options:\n"
         "  -h, --help    Display this help.\n"
         "\n"
-        "Note: Command handlers will be implemented incrementally.\n";
+        "The list, status, and run handlers will be implemented "
+        "in subsequent commits.\n";
 }
 
 }

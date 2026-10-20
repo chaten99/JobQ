@@ -1,4 +1,5 @@
 
+#include "cli/CommandHandlers.h"
 #include "cli/CommandLine.h"
 
 #include <iostream>
@@ -7,8 +8,11 @@
 
 int main(int argc, char* argv[]) {
     std::vector<std::string> arguments;
+
     arguments.reserve(
-        argc > 1 ? static_cast<std::size_t>(argc - 1) : 0
+        argc > 1
+            ? static_cast<std::size_t>(argc - 1)
+            : 0
     );
 
     for (int index = 1; index < argc; ++index) {
@@ -23,7 +27,6 @@ int main(int argc, char* argv[]) {
             parsed,
             errorMessage
         )) {
-
         std::cerr
             << "Error: "
             << errorMessage
@@ -35,8 +38,15 @@ int main(int argc, char* argv[]) {
 
     if (parsed.helpRequested) {
         std::cout << jobq::cli::usageText();
-
         return jobq::cli::kSuccessExitCode;
+    }
+
+    if (parsed.command == "submit") {
+        return jobq::cli::executeSubmitCommand(
+            parsed,
+            std::cout,
+            std::cerr
+        );
     }
 
     std::cerr
