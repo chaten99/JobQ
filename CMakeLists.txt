@@ -28,9 +28,7 @@ target_include_directories(jobq PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(jobq PRIVATE
-    Threads::Threads
-)
+target_link_libraries(jobq PRIVATE Threads::Threads)
 
 add_executable(jobq_stress_test
     examples/stress_test.cpp
@@ -41,9 +39,7 @@ target_include_directories(jobq_stress_test PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(jobq_stress_test PRIVATE
-    Threads::Threads
-)
+target_link_libraries(jobq_stress_test PRIVATE Threads::Threads)
 
 add_executable(jobq_cli
     src/cli/main.cpp
@@ -56,9 +52,7 @@ target_include_directories(jobq_cli PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(jobq_cli PRIVATE
-    Threads::Threads
-)
+target_link_libraries(jobq_cli PRIVATE Threads::Threads)
 
 include(CTest)
 
@@ -72,9 +66,7 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 
-    target_link_libraries(jobq_manager_test PRIVATE
-        Threads::Threads
-    )
+    target_link_libraries(jobq_manager_test PRIVATE Threads::Threads)
 
     add_test(NAME jobq_manager_lifecycle COMMAND jobq_manager_test)
 
@@ -87,9 +79,7 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 
-    target_link_libraries(jobq_priority_test PRIVATE
-        Threads::Threads
-    )
+    target_link_libraries(jobq_priority_test PRIVATE Threads::Threads)
 
     add_test(NAME jobq_priority_scheduling COMMAND jobq_priority_test)
 
@@ -102,9 +92,7 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 
-    target_link_libraries(jobq_retry_policy_test PRIVATE
-        Threads::Threads
-    )
+    target_link_libraries(jobq_retry_policy_test PRIVATE Threads::Threads)
 
     add_test(NAME jobq_retry_policy COMMAND jobq_retry_policy_test)
 
@@ -117,9 +105,7 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 
-    target_link_libraries(jobq_retry_execution_test PRIVATE
-        Threads::Threads
-    )
+    target_link_libraries(jobq_retry_execution_test PRIVATE Threads::Threads)
 
     add_test(NAME jobq_retry_execution COMMAND jobq_retry_execution_test)
 
@@ -132,9 +118,7 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 
-    target_link_libraries(jobq_retry_backoff_test PRIVATE
-        Threads::Threads
-    )
+    target_link_libraries(jobq_retry_backoff_test PRIVATE Threads::Threads)
 
     add_test(NAME jobq_retry_backoff COMMAND jobq_retry_backoff_test)
 
@@ -147,9 +131,7 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 
-    target_link_libraries(jobq_storage_record_test PRIVATE
-        Threads::Threads
-    )
+    target_link_libraries(jobq_storage_record_test PRIVATE Threads::Threads)
 
     add_test(NAME jobq_storage_record COMMAND jobq_storage_record_test)
 
@@ -162,9 +144,7 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 
-    target_link_libraries(jobq_file_storage_test PRIVATE
-        Threads::Threads
-    )
+    target_link_libraries(jobq_file_storage_test PRIVATE Threads::Threads)
 
     add_test(NAME jobq_file_storage COMMAND jobq_file_storage_test)
 
@@ -177,9 +157,7 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 
-    target_link_libraries(jobq_manager_persistence_test PRIVATE
-        Threads::Threads
-    )
+    target_link_libraries(jobq_manager_persistence_test PRIVATE Threads::Threads)
 
     add_test(NAME jobq_manager_persistence COMMAND jobq_manager_persistence_test)
 
@@ -192,9 +170,7 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 
-    target_link_libraries(jobq_recovery_test PRIVATE
-        Threads::Threads
-    )
+    target_link_libraries(jobq_recovery_test PRIVATE Threads::Threads)
 
     add_test(NAME jobq_crash_recovery COMMAND jobq_recovery_test)
 
@@ -207,9 +183,7 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 
-    target_link_libraries(jobq_persistence_recovery_regression_test PRIVATE
-        Threads::Threads
-    )
+    target_link_libraries(jobq_persistence_recovery_regression_test PRIVATE Threads::Threads)
 
     add_test(
         NAME jobq_persistence_recovery_regression
@@ -238,9 +212,22 @@ if(BUILD_TESTING)
         ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 
-    target_link_libraries(jobq_cli_submit_test PRIVATE
-        Threads::Threads
-    )
+    target_link_libraries(jobq_cli_submit_test PRIVATE Threads::Threads)
 
     add_test(NAME jobq_cli_submit COMMAND jobq_cli_submit_test)
+
+    add_executable(jobq_cli_inspection_test
+        tests/cli_inspection_test.cpp
+        src/cli/CommandLine.cpp
+        src/cli/CommandHandlers.cpp
+        ${JOBQ_CORE_SOURCES}
+    )
+
+    target_include_directories(jobq_cli_inspection_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(jobq_cli_inspection_test PRIVATE Threads::Threads)
+
+    add_test(NAME jobq_cli_inspection COMMAND jobq_cli_inspection_test)
 endif()

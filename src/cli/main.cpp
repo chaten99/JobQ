@@ -38,11 +38,28 @@ int main(int argc, char* argv[]) {
 
     if (parsed.helpRequested) {
         std::cout << jobq::cli::usageText();
+
         return jobq::cli::kSuccessExitCode;
     }
 
     if (parsed.command == "submit") {
         return jobq::cli::executeSubmitCommand(
+            parsed,
+            std::cout,
+            std::cerr
+        );
+    }
+
+    if (parsed.command == "list") {
+        return jobq::cli::executeListCommand(
+            parsed,
+            std::cout,
+            std::cerr
+        );
+    }
+
+    if (parsed.command == "status") {
+        return jobq::cli::executeStatusCommand(
             parsed,
             std::cout,
             std::cerr

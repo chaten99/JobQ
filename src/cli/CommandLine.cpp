@@ -179,8 +179,7 @@ std::string usageText() {
         "\n"
         "Commands:\n"
         "  submit --type TYPE --payload PAYLOAD "
-        "[--priority PRIORITY] [--retries COUNT] "
-        "[--storage PATH]\n"
+        "[--priority PRIORITY] [--retries COUNT] [--storage PATH]\n"
         "      Persist a new job.\n"
         "\n"
         "  list [--status STATUS] [--limit COUNT] [--storage PATH]\n"
@@ -190,13 +189,10 @@ std::string usageText() {
         "      Inspect a job by ID.\n"
         "\n"
         "  run [--workers COUNT] [--storage PATH]\n"
-        "      Start job workers.\n"
+        "      Start job workers (implemented in a later commit).\n"
         "\n"
         "General options:\n"
-        "  -h, --help    Display this help.\n"
-        "\n"
-        "The list, status, and run handlers will be implemented "
-        "in subsequent commits.\n";
+        "  -h, --help    Display this help.\n";
 }
 
 }
