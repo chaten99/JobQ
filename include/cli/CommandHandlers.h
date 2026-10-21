@@ -24,4 +24,10 @@ int executeStatusCommand(
     std::ostream& errorOutput
 );
 
-}
+int executeRunCommand(
+    const ParsedCommandLine& parsed,
+    std::ostream& output,
+    std::ostream& errorOutput
+);
+
+} // namespace jobq::cli

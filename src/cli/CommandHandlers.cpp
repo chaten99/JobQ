@@ -1,21 +1,28 @@
 
 #include "cli/CommandHandlers.h"
 
+#include <algorithm>
 #include <charconv>
 #include <cctype>
 #include <filesystem>
 #include <iostream>
 #include <memory>
 #include <optional>
+#include <ostream>
+#include <stdexcept>
+#include <syncstream>
+#include <thread>
 #include <string>
 #include <system_error>
 #include <vector>
 
+#include "executor/JobExecutor.h"
 #include "job/Job.h"
 #include "manager/JobManager.h"
 #include "queue/JobQueue.h"
 #include "storage/FileJobStorage.h"
 #include "storage/JobRecord.h"
+#include "worker/WorkerPool.h"
 
 namespace jobq::cli {
 
@@ -480,6 +487,151 @@ int executeStatusCommand(
             << exception.what()
             << '\n';
 
+        return kCommandErrorExitCode;
+    }
+}
+
+
+int executeRunCommand(
+    const ParsedCommandLine& parsed,
+    std::ostream& output,
+    std::ostream& errorOutput
+) {
+    if (parsed.command != "run") {
+        return usageError(
+            "Run handler received a different command.",
+            errorOutput
+        );
+    }
+
+    if (!parsed.positionalArguments.empty()) {
+        return usageError(
+            "The run command does not accept positional arguments.",
+            errorOutput
+        );
+    }
+
+    std::size_t workerCount = 2;
+    const auto workersIterator = parsed.options.find("workers");
+
+    if (workersIterator != parsed.options.end()) {
+        if (!parseUnsigned(workersIterator->second, workerCount) ||
+            workerCount == 0) {
+            return usageError(
+                "Invalid --workers value. Use a positive integer.",
+                errorOutput
+            );
+        }
+    }
+
+    const auto storagePath = resolveStoragePath(parsed);
+
+    if (storagePath.empty()) {
+        return usageError(
+            "Storage path cannot be empty.",
+            errorOutput
+        );
+    }
+
+    try {
+        JobQueue queue;
+        auto storage = std::make_shared<FileJobStorage>(storagePath);
+
+        JobManager manager(queue, storage);
+        JobExecutor executor;
+
+        executor.registerHandler(
+            "REPORT",
+            [&output](const Job& job) {
+                std::osyncstream(output)
+                    << "[CLI] Processing REPORT: "
+                    << job.getPayload() << '\n';
+            }
+        );
+
+        executor.registerHandler(
+            "EMAIL",
+            [&output](const Job& job) {
+                std::osyncstream(output)
+                    << "[CLI] Sending EMAIL: "
+                    << job.getPayload() << '\n';
+            }
+        );
+
+        executor.registerHandler(
+            "CALCULATE",
+            [&output](const Job& job) {
+                std::osyncstream(output)
+                    << "[CLI] Running CALCULATION: "
+                    << job.getPayload() << '\n';
+            }
+        );
+
+        executor.registerHandler(
+            "FAIL",
+            [](const Job&) {
+                throw std::runtime_error(
+                    "Intentional job failure requested by FAIL handler"
+                );
+            }
+        );
+
+        WorkerPool pool(queue, executor, workerCount);
+
+        output << "Starting JobQ with " << pool.size()
+               << " workers...\n";
+        output << "Storage: " << storagePath.string() << '\n';
+
+        pool.start();
+        pool.stop();
+
+        const auto records = storage->loadAll();
+        std::size_t completedJobs = 0;
+        std::size_t failedJobs = 0;
+        std::size_t pendingJobs = 0;
+        std::size_t runningJobs = 0;
+        std::size_t cancelledJobs = 0;
+
+        for (const auto& record : records) {
+            switch (record.status) {
+                case JobStatus::Completed:
+                    ++completedJobs;
+                    break;
+                case JobStatus::Failed:
+                    ++failedJobs;
+                    break;
+                case JobStatus::Pending:
+                    ++pendingJobs;
+                    break;
+                case JobStatus::Running:
+                    ++runningJobs;
+                    break;
+                case JobStatus::Cancelled:
+                    ++cancelledJobs;
+                    break;
+            }
+        }
+
+        output << "JobQ stopped cleanly.\n";
+        output << "Total jobs tracked: " << manager.totalJobs() << '\n';
+        output << "Completed jobs: " << completedJobs << '\n';
+        output << "Failed jobs: " << failedJobs << '\n';
+        output << "Pending jobs: " << pendingJobs << '\n';
+        output << "Running jobs: " << runningJobs << '\n';
+        output << "Cancelled jobs: " << cancelledJobs << '\n';
+
+        if (pendingJobs != 0 || runningJobs != 0) {
+            errorOutput
+                << "Run finished with jobs still pending or running.\n";
+            return kCommandErrorExitCode;
+        }
+
+        return kSuccessExitCode;
+    } catch (const std::exception& exception) {
+        errorOutput
+            << "Unable to run jobs: "
+            << exception.what()
+            << '\n';
         return kCommandErrorExitCode;
     }
 }

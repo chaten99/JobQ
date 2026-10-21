@@ -1,4 +1,3 @@
-
 #include "cli/CommandHandlers.h"
 #include "cli/CommandLine.h"
 
@@ -38,7 +37,6 @@ int main(int argc, char* argv[]) {
 
     if (parsed.helpRequested) {
         std::cout << jobq::cli::usageText();
-
         return jobq::cli::kSuccessExitCode;
     }
 
@@ -60,6 +58,14 @@ int main(int argc, char* argv[]) {
 
     if (parsed.command == "status") {
         return jobq::cli::executeStatusCommand(
+            parsed,
+            std::cout,
+            std::cerr
+        );
+    }
+
+    if (parsed.command == "run") {
+        return jobq::cli::executeRunCommand(
             parsed,
             std::cout,
             std::cerr

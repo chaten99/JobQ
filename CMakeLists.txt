@@ -230,4 +230,19 @@ if(BUILD_TESTING)
     target_link_libraries(jobq_cli_inspection_test PRIVATE Threads::Threads)
 
     add_test(NAME jobq_cli_inspection COMMAND jobq_cli_inspection_test)
+
+    add_executable(jobq_cli_run_test
+        tests/cli_run_test.cpp
+        src/cli/CommandLine.cpp
+        src/cli/CommandHandlers.cpp
+        ${JOBQ_CORE_SOURCES}
+    )
+
+    target_include_directories(jobq_cli_run_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(jobq_cli_run_test PRIVATE Threads::Threads)
+
+    add_test(NAME jobq_cli_run COMMAND jobq_cli_run_test)
 endif()
