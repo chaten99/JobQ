@@ -311,5 +311,22 @@ if(BUILD_TESTING)
         COMMAND jobq_cli_workflow_test
             "$<TARGET_FILE:jobq_cli>"
     )
+    add_executable(jobq_metrics_test
+        tests/job_metrics_test.cpp
+        src/metrics/JobMetrics.cpp
+    )
+
+    target_include_directories(jobq_metrics_test PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/include"
+    )
+
+    target_link_libraries(jobq_metrics_test PRIVATE
+        Threads::Threads
+    )
+
+    add_test(
+        NAME jobq_metrics_model
+        COMMAND jobq_metrics_test
+    )
 
 endif()
