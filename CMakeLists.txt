@@ -1,3 +1,4 @@
+
 cmake_minimum_required(VERSION 3.20)
 
 project(JobQ LANGUAGES CXX)
@@ -17,6 +18,7 @@ set(JOBQ_CORE_SOURCES
     src/manager/JobManager.cpp
     src/storage/JobRecord.cpp
     src/storage/FileJobStorage.cpp
+    src/metrics/JobMetrics.cpp
 )
 
 add_executable(jobq
@@ -311,6 +313,7 @@ if(BUILD_TESTING)
         COMMAND jobq_cli_workflow_test
             "$<TARGET_FILE:jobq_cli>"
     )
+
     add_executable(jobq_metrics_test
         tests/job_metrics_test.cpp
         src/metrics/JobMetrics.cpp

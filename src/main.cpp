@@ -1,3 +1,4 @@
+
 #include <chrono>
 #include <cstddef>
 #include <iostream>
@@ -10,6 +11,7 @@
 #include "executor/JobExecutor.h"
 #include "job/Job.h"
 #include "manager/JobManager.h"
+#include "metrics/JobMetrics.h"
 #include "queue/JobQueue.h"
 #include "worker/WorkerPool.h"
 
@@ -153,7 +155,8 @@ int main() {
     std::cout << "========== Worker Pool Demo ==========\n";
 
     jobq::JobQueue queue;
-    jobq::JobManager manager(queue);
+    jobq::JobMetrics metrics;
+    jobq::JobManager manager(queue, metrics);
     jobq::JobExecutor executor;
 
     executor.registerHandler(
@@ -212,7 +215,8 @@ int main() {
     jobq::WorkerPool pool(
         queue,
         executor,
-        workerCount
+        workerCount,
+        metrics
     );
 
     std::cout
@@ -317,7 +321,80 @@ int main() {
         expectedResults &&
         manager.totalJobs() == 9;
 
-    std::cout << "----------------------------------------\n";
+    const auto metricsSnapshot = metrics.snapshot();
+
+    const bool metricsIntegrationPassed =
+        metricsSnapshot.submittedJobs == submittedJobs.size() &&
+        metricsSnapshot.startedExecutions ==
+            metricsSnapshot.finishedExecutions &&
+        metricsSnapshot.completedExecutions == completedJobs &&
+        metricsSnapshot.failedExecutions >= failedJobs &&
+        metricsSnapshot.scheduledRetries <=
+            metricsSnapshot.failedExecutions;
+
+    std::cout << "\n========== Runtime Metrics ==========\n";
+
+    std::cout
+        << "Submitted jobs: "
+        << metricsSnapshot.submittedJobs
+        << '\n';
+
+    std::cout
+        << "Started executions: "
+        << metricsSnapshot.startedExecutions
+        << '\n';
+
+    std::cout
+        << "Completed executions: "
+        << metricsSnapshot.completedExecutions
+        << '\n';
+
+    std::cout
+        << "Failed executions: "
+        << metricsSnapshot.failedExecutions
+        << '\n';
+
+    std::cout
+        << "Scheduled retries: "
+        << metricsSnapshot.scheduledRetries
+        << '\n';
+
+    std::cout
+        << "Finished executions: "
+        << metricsSnapshot.finishedExecutions
+        << '\n';
+
+    std::cout
+        << "Total execution time (ns): "
+        << metricsSnapshot.totalExecutionTime.count()
+        << '\n';
+
+    std::cout
+        << "Average execution time (ns): "
+        << metricsSnapshot.averageExecutionTime.count()
+        << '\n';
+
+    std::cout
+        << "Elapsed time (ns): "
+        << metricsSnapshot.elapsedTime.count()
+        << '\n';
+
+    std::cout
+        << "Throughput (jobs/sec): "
+        << metricsSnapshot.throughputJobsPerSecond
+        << '\n';
+
+    std::cout
+        << "Metrics integration test: "
+        << (metricsIntegrationPassed ? "PASS" : "FAIL")
+        << '\n';
+
+    std::cout << "====================================\n";
+
+    lifecycleTrackingPassed =
+        lifecycleTrackingPassed && metricsIntegrationPassed;
+
+    std::cout << "\n========== Final Test Results ==========\n";
 
     std::cout
         << "Total tracked jobs: "
