@@ -8,12 +8,15 @@
 
 namespace jobq {
 
+class JobMetrics;
+
 class Worker {
 public:
     Worker(
         std::size_t id,
         JobQueue& queue,
-        JobExecutor& executor
+        JobExecutor& executor,
+        JobMetrics* metrics = nullptr
     );
 
     ~Worker() = default;
@@ -32,6 +35,7 @@ private:
 
     JobQueue& queue_;
     JobExecutor& executor_;
+    JobMetrics* metrics_{nullptr};
 
     std::thread thread_;
 };

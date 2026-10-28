@@ -10,12 +10,21 @@
 
 namespace jobq {
 
+class JobMetrics;
+
 class WorkerPool {
 public:
     WorkerPool(
         JobQueue& queue,
         JobExecutor& executor,
         std::size_t workerCount
+    );
+
+    WorkerPool(
+        JobQueue& queue,
+        JobExecutor& executor,
+        std::size_t workerCount,
+        JobMetrics& metrics
     );
 
     ~WorkerPool();
@@ -30,8 +39,11 @@ public:
     std::size_t size() const;
 
 private:
+    void initializeWorkers(std::size_t workerCount);
+
     JobQueue& queue_;
     JobExecutor& executor_;
+    JobMetrics* metrics_{nullptr};
 
     std::vector<std::unique_ptr<Worker>> workers_;
 

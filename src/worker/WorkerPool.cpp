@@ -5,84 +5,99 @@
 
 namespace jobq {
 
-    WorkerPool::WorkerPool(
+WorkerPool::WorkerPool(
     JobQueue& queue,
     JobExecutor& executor,
     std::size_t workerCount
 )
-        : queue_(queue),
+    : queue_(queue),
       executor_(executor) {
+    initializeWorkers(workerCount);
+}
 
+WorkerPool::WorkerPool(
+    JobQueue& queue,
+    JobExecutor& executor,
+    std::size_t workerCount,
+    JobMetrics& metrics
+)
+    : queue_(queue),
+      executor_(executor),
+      metrics_(&metrics) {
+    initializeWorkers(workerCount);
+}
+
+void WorkerPool::initializeWorkers(std::size_t workerCount) {
     if (workerCount == 0) {
-            throw std::invalid_argument(
+        throw std::invalid_argument(
             "Worker count must be greater than zero"
         );
-        }
+    }
 
-        workers_.reserve(workerCount);
+    workers_.reserve(workerCount);
 
     for (std::size_t i = 0; i < workerCount; ++i) {
-            workers_.push_back(
-                std::make_unique<Worker>(
-                    i + 1,
-                    queue_,
-                    executor_
+        workers_.push_back(
+            std::make_unique<Worker>(
+                i + 1,
+                queue_,
+                executor_,
+                metrics_
             )
         );
-        }
     }
+}
 
 WorkerPool::~WorkerPool() {
-        stop();
-    }
+    stop();
+}
 
 void WorkerPool::start() {
     if (started_) {
-            throw std::logic_error(
+        throw std::logic_error(
             "Worker pool has already been started"
         );
-        }
+    }
 
     if (stopped_) {
-            throw std::logic_error(
+        throw std::logic_error(
             "Worker pool cannot be restarted"
         );
-        }
+    }
 
     try {
         for (auto& worker : workers_) {
-                worker->start();
-            }
-
-            started_ = true;
-        }
-    catch (...) {
-            queue_.close();
-
-        for (auto& worker : workers_) {
-                worker->join();
-            }
-
-            throw;
-        }
-    }
-
-void WorkerPool::stop() {
-    if (!started_ || stopped_) {
-            return;
+            worker->start();
         }
 
+        started_ = true;
+    } catch (...) {
         queue_.close();
 
-    for (auto& worker : workers_) {
+        for (auto& worker : workers_) {
             worker->join();
         }
 
-        stopped_ = true;
+        throw;
+    }
+}
+
+void WorkerPool::stop() {
+    if (!started_ || stopped_) {
+        return;
     }
 
-std::size_t WorkerPool::size() const {
-        return workers_.size();
+    queue_.close();
+
+    for (auto& worker : workers_) {
+        worker->join();
     }
+
+    stopped_ = true;
+}
+
+std::size_t WorkerPool::size() const {
+    return workers_.size();
+}
 
 } // namespace jobq
