@@ -19,6 +19,7 @@ set(JOBQ_CORE_SOURCES
     src/storage/JobRecord.cpp
     src/storage/FileJobStorage.cpp
     src/metrics/JobMetrics.cpp
+    src/metrics/JobMetricsJson.cpp
 )
 
 add_executable(jobq
@@ -364,6 +365,22 @@ if(BUILD_TESTING)
     add_test(
         NAME jobq_metrics_integration
         COMMAND jobq_metrics_integration_test
+    )
+
+    add_executable(jobq_metrics_json_test
+        tests/job_metrics_json_test.cpp
+        ${JOBQ_CORE_SOURCES}
+    )
+
+    target_include_directories(jobq_metrics_json_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(jobq_metrics_json_test PRIVATE Threads::Threads)
+
+    add_test(
+        NAME jobq_metrics_json
+        COMMAND jobq_metrics_json_test
     )
 
 endif()

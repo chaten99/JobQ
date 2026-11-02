@@ -21,6 +21,7 @@
 #include "job/Job.h"
 #include "manager/JobManager.h"
 #include "metrics/JobMetrics.h"
+#include "metrics/JobMetricsJson.h"
 #include "queue/JobQueue.h"
 #include "storage/FileJobStorage.h"
 #include "storage/JobRecord.h"
@@ -586,6 +587,18 @@ int executeRunCommand(
         }
     }
 
+    std::string format = "text";
+    const auto formatIterator = parsed.options.find("format");
+    if (formatIterator != parsed.options.end()) {
+        format = lowercase(formatIterator->second);
+        if (format != "text" && format != "json") {
+            return usageError(
+                "Invalid format. Use text or json.",
+                errorOutput
+            );
+        }
+    }
+
     const auto storagePath = resolveStoragePath(parsed);
 
     if (storagePath.empty()) {
@@ -683,7 +696,12 @@ int executeRunCommand(
         output << "Running jobs: " << runningJobs << '\n';
         output << "Cancelled jobs: " << cancelledJobs << '\n';
         output << '\n';
-        printMetrics(metrics.snapshot(), output);
+
+        if (format == "json") {
+            output << toJson(metrics.snapshot()) << '\n';
+        } else {
+            printMetrics(metrics.snapshot(), output);
+        }
 
         if (pendingJobs != 0 || runningJobs != 0) {
             errorOutput
@@ -721,6 +739,18 @@ int executeMetricsCommand(
         );
     }
 
+    std::string format = "text";
+    const auto formatIterator = parsed.options.find("format");
+    if (formatIterator != parsed.options.end()) {
+        format = lowercase(formatIterator->second);
+        if (format != "text" && format != "json") {
+            return usageError(
+                "Invalid format. Use text or json.",
+                errorOutput
+            );
+        }
+    }
+
     if (!metrics) {
         errorOutput
             << "Error: Standalone 'metrics' command cannot report metrics across\n"
@@ -729,7 +759,12 @@ int executeMetricsCommand(
         return kCommandErrorExitCode;
     }
 
-    printMetrics(metrics->snapshot(), output);
+    if (format == "json") {
+        output << toJson(metrics->snapshot()) << '\n';
+    } else {
+        printMetrics(metrics->snapshot(), output);
+    }
+
     return kSuccessExitCode;
 }
 
