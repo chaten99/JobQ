@@ -332,4 +332,22 @@ if(BUILD_TESTING)
         COMMAND jobq_metrics_test
     )
 
+    add_executable(jobq_cli_metrics_test
+        tests/cli_metrics_test.cpp
+        src/cli/CommandLine.cpp
+        src/cli/CommandHandlers.cpp
+        ${JOBQ_CORE_SOURCES}
+    )
+
+    target_include_directories(jobq_cli_metrics_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(jobq_cli_metrics_test PRIVATE Threads::Threads)
+
+    add_test(
+        NAME jobq_cli_metrics
+        COMMAND jobq_cli_metrics_test
+    )
+
 endif()

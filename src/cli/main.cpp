@@ -72,6 +72,14 @@ int main(int argc, char* argv[]) {
         );
     }
 
+    if (parsed.command == "metrics") {
+        return jobq::cli::executeMetricsCommand(
+            parsed,
+            std::cout,
+            std::cerr
+        );
+    }
+
     std::cerr
         << "Command '"
         << parsed.command
