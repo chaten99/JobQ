@@ -11,7 +11,8 @@ bool isSupportedCommand(std::string_view command) {
     return command == "submit" ||
            command == "list" ||
            command == "status" ||
-           command == "run";
+           command == "run" ||
+           command == "metrics";
 }
 
 bool isAllowedOption(
@@ -35,7 +36,12 @@ bool isAllowedOption(
     }
 
     if (command == "run") {
-        return option == "workers";
+        return option == "workers" ||
+               option == "format";
+    }
+
+    if (command == "metrics") {
+        return option == "format";
     }
 
     return false;
@@ -188,11 +194,14 @@ std::string usageText() {
         "  status JOB_ID [--storage PATH]\n"
         "      Inspect a job by ID.\n"
         "\n"
-        "  run [--workers COUNT] [--storage PATH]\n"
-        "      Start job workers (implemented in a later commit).\n"
+        "  run [--workers COUNT] [--storage PATH] [--format FORMAT]\n"
+        "      Start job workers and report runtime metrics (text or json).\n"
+        "\n"
+        "  metrics [--format FORMAT]\n"
+        "      Explain metrics availability or report in-process metrics (text or json).\n"
         "\n"
         "General options:\n"
         "  -h, --help    Display this help.\n";
 }
 
-}
+} // namespace jobq::cli

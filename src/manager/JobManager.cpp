@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 
+#include "metrics/JobMetrics.h"
 #include "storage/JobRecord.h"
 
 namespace jobq {
@@ -46,6 +47,28 @@ bool isExecutionState(JobStatus status) {
            status == JobStatus::Failed;
 }
 
+void recordJobSubmittedSafely(JobMetrics* metrics) noexcept {
+    if (!metrics) {
+        return;
+    }
+
+    try {
+        metrics->recordJobSubmitted();
+    } catch (...) {
+    }
+}
+
+void recordRetryScheduledSafely(JobMetrics* metrics) noexcept {
+    if (!metrics) {
+        return;
+    }
+
+    try {
+        metrics->recordRetryScheduled();
+    } catch (...) {
+    }
+}
+
 } // namespace
 
 JobManager::JobManager(JobQueue& queue)
@@ -53,10 +76,35 @@ JobManager::JobManager(JobQueue& queue)
 
 JobManager::JobManager(
     JobQueue& queue,
+    JobMetrics& metrics
+)
+    : queue_(queue),
+      metrics_(&metrics) {}
+
+JobManager::JobManager(
+    JobQueue& queue,
     std::shared_ptr<JobStorage> storage
 )
     : queue_(queue),
       storage_(std::move(storage)) {
+
+    if (!storage_) {
+        throw std::invalid_argument(
+            "Persistent JobManager requires a storage instance"
+        );
+    }
+
+    restoreStoredJobs();
+}
+
+JobManager::JobManager(
+    JobQueue& queue,
+    std::shared_ptr<JobStorage> storage,
+    JobMetrics& metrics
+)
+    : queue_(queue),
+      storage_(std::move(storage)),
+      metrics_(&metrics) {
 
     if (!storage_) {
         throw std::invalid_argument(
@@ -139,7 +187,6 @@ void JobManager::restoreStoredJobs() {
             job->markFailed();
         }
 
-
         if (job->getStatus() == JobStatus::Failed &&
             job->canRetry()) {
 
@@ -165,8 +212,9 @@ void JobManager::restoreStoredJobs() {
 
     for (const auto& job : jobsToSchedule) {
         bool accepted = false;
+        const bool isRetry = job->getAttemptsMade() > 0;
 
-        if (job->getAttemptsMade() == 0) {
+        if (!isRetry) {
             accepted = queue_.push(job);
         } else {
             accepted = queue_.pushRetry(
@@ -179,6 +227,10 @@ void JobManager::restoreStoredJobs() {
             throw std::runtime_error(
                 "Failed to enqueue a recovered job"
             );
+        }
+
+        if (isRetry) {
+            recordRetryScheduledSafely(metrics_);
         }
     }
 }
@@ -247,6 +299,7 @@ std::shared_ptr<Job> JobManager::submit(
     }
 
     if (queue_.push(job)) {
+        recordJobSubmittedSafely(metrics_);
         return job;
     }
 
@@ -297,4 +350,4 @@ std::size_t JobManager::totalJobs() const {
     return jobs_.size();
 }
 
-}
+} // namespace jobq

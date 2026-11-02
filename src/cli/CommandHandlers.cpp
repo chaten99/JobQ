@@ -1,14 +1,15 @@
-
 #include "cli/CommandHandlers.h"
 
 #include <algorithm>
 #include <charconv>
 #include <cctype>
 #include <filesystem>
+#include <iomanip>
 #include <iostream>
 #include <memory>
 #include <optional>
 #include <ostream>
+#include <sstream>
 #include <stdexcept>
 #include <syncstream>
 #include <thread>
@@ -19,6 +20,8 @@
 #include "executor/JobExecutor.h"
 #include "job/Job.h"
 #include "manager/JobManager.h"
+#include "metrics/JobMetrics.h"
+#include "metrics/JobMetricsJson.h"
 #include "queue/JobQueue.h"
 #include "storage/FileJobStorage.h"
 #include "storage/JobRecord.h"
@@ -182,6 +185,67 @@ void printJobDetails(
 }
 
 } // namespace
+
+std::string formatDuration(std::chrono::nanoseconds duration) {
+    const auto count = duration.count();
+    if (count <= 0) {
+        return "0 ns";
+    }
+
+    std::ostringstream stream;
+    if (count < 1'000) {
+        stream << count << " ns";
+    } else if (count < 1'000'000) {
+        stream << std::fixed << std::setprecision(2)
+               << (static_cast<double>(count) / 1'000.0) << " us";
+    } else if (count < 1'000'000'000LL) {
+        stream << std::fixed << std::setprecision(2)
+               << (static_cast<double>(count) / 1'000'000.0) << " ms";
+    } else {
+        stream << std::fixed << std::setprecision(2)
+               << (static_cast<double>(count) / 1'000'000'000.0) << " s";
+    }
+
+    return stream.str();
+}
+
+std::string formatThroughput(double throughput) {
+    std::ostringstream stream;
+    stream << std::fixed << std::setprecision(2)
+           << throughput << " jobs/sec";
+    return stream.str();
+}
+
+std::string formatMetrics(const JobMetricsSnapshot& snapshot) {
+    std::ostringstream stream;
+
+    stream << "========== JobQ Runtime Metrics ==========\n\n";
+
+    stream << "Job Statistics\n\n";
+    stream << "  Submitted Jobs:          " << snapshot.submittedJobs << '\n';
+    stream << "  Started Executions:      " << snapshot.startedExecutions << '\n';
+    stream << "  Completed Executions:    " << snapshot.completedExecutions << '\n';
+    stream << "  Failed Executions:       " << snapshot.failedExecutions << '\n';
+    stream << "  Scheduled Retries:       " << snapshot.scheduledRetries << '\n';
+    stream << "  Finished Executions:     " << snapshot.finishedExecutions << "\n\n";
+
+    stream << "Performance Statistics\n\n";
+    stream << "  Total Execution Time:    " << formatDuration(snapshot.totalExecutionTime) << '\n';
+    stream << "  Average Execution Time:  " << formatDuration(snapshot.averageExecutionTime) << '\n';
+    stream << "  Elapsed Time:            " << formatDuration(snapshot.elapsedTime) << '\n';
+    stream << "  Throughput:              " << formatThroughput(snapshot.throughputJobsPerSecond) << "\n\n";
+
+    stream << "==========================================";
+
+    return stream.str();
+}
+
+void printMetrics(
+    const JobMetricsSnapshot& snapshot,
+    std::ostream& output
+) {
+    output << formatMetrics(snapshot) << '\n';
+}
 
 int executeSubmitCommand(
     const ParsedCommandLine& parsed,
@@ -491,7 +555,6 @@ int executeStatusCommand(
     }
 }
 
-
 int executeRunCommand(
     const ParsedCommandLine& parsed,
     std::ostream& output,
@@ -524,6 +587,18 @@ int executeRunCommand(
         }
     }
 
+    std::string format = "text";
+    const auto formatIterator = parsed.options.find("format");
+    if (formatIterator != parsed.options.end()) {
+        format = lowercase(formatIterator->second);
+        if (format != "text" && format != "json") {
+            return usageError(
+                "Invalid format. Use text or json.",
+                errorOutput
+            );
+        }
+    }
+
     const auto storagePath = resolveStoragePath(parsed);
 
     if (storagePath.empty()) {
@@ -537,7 +612,8 @@ int executeRunCommand(
         JobQueue queue;
         auto storage = std::make_shared<FileJobStorage>(storagePath);
 
-        JobManager manager(queue, storage);
+        JobMetrics metrics;
+        JobManager manager(queue, storage, metrics);
         JobExecutor executor;
 
         executor.registerHandler(
@@ -576,7 +652,7 @@ int executeRunCommand(
             }
         );
 
-        WorkerPool pool(queue, executor, workerCount);
+        WorkerPool pool(queue, executor, workerCount, metrics);
 
         output << "Starting JobQ with " << pool.size()
                << " workers...\n";
@@ -619,6 +695,13 @@ int executeRunCommand(
         output << "Pending jobs: " << pendingJobs << '\n';
         output << "Running jobs: " << runningJobs << '\n';
         output << "Cancelled jobs: " << cancelledJobs << '\n';
+        output << '\n';
+
+        if (format == "json") {
+            output << toJson(metrics.snapshot()) << '\n';
+        } else {
+            printMetrics(metrics.snapshot(), output);
+        }
 
         if (pendingJobs != 0 || runningJobs != 0) {
             errorOutput
@@ -636,4 +719,53 @@ int executeRunCommand(
     }
 }
 
+int executeMetricsCommand(
+    const ParsedCommandLine& parsed,
+    std::ostream& output,
+    std::ostream& errorOutput,
+    const JobMetrics* metrics
+) {
+    if (parsed.command != "metrics") {
+        return usageError(
+            "Metrics handler received a different command.",
+            errorOutput
+        );
+    }
+
+    if (!parsed.positionalArguments.empty()) {
+        return usageError(
+            "The metrics command does not accept positional arguments.",
+            errorOutput
+        );
+    }
+
+    std::string format = "text";
+    const auto formatIterator = parsed.options.find("format");
+    if (formatIterator != parsed.options.end()) {
+        format = lowercase(formatIterator->second);
+        if (format != "text" && format != "json") {
+            return usageError(
+                "Invalid format. Use text or json.",
+                errorOutput
+            );
+        }
+    }
+
+    if (!metrics) {
+        errorOutput
+            << "Error: Standalone 'metrics' command cannot report metrics across\n"
+            << "independent processes because metrics are stored in memory.\n"
+            << "Runtime metrics are reported automatically upon completion of 'run'.\n";
+        return kCommandErrorExitCode;
+    }
+
+    if (format == "json") {
+        output << toJson(metrics->snapshot()) << '\n';
+    } else {
+        printMetrics(metrics->snapshot(), output);
+    }
+
+    return kSuccessExitCode;
 }
+
+} // namespace jobq::cli

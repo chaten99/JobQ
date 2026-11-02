@@ -1,4 +1,3 @@
-
 #pragma once
 
 #include <atomic>
@@ -16,13 +15,26 @@
 
 namespace jobq {
 
+class JobMetrics;
+
 class JobManager {
 public:
     explicit JobManager(JobQueue& queue);
 
     JobManager(
         JobQueue& queue,
+        JobMetrics& metrics
+    );
+
+    JobManager(
+        JobQueue& queue,
         std::shared_ptr<JobStorage> storage
+    );
+
+    JobManager(
+        JobQueue& queue,
+        std::shared_ptr<JobStorage> storage,
+        JobMetrics& metrics
     );
 
     JobManager(const JobManager&) = delete;
@@ -57,6 +69,7 @@ private:
 
     JobQueue& queue_;
     std::shared_ptr<JobStorage> storage_;
+    JobMetrics* metrics_{nullptr};
 
     std::atomic<uint64_t> nextId_{1};
 
@@ -65,4 +78,4 @@ private:
     std::unordered_map<uint64_t, std::shared_ptr<Job>> jobs_;
 };
 
-}
+} // namespace jobq
