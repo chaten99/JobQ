@@ -369,6 +369,8 @@ if(BUILD_TESTING)
 
     add_executable(jobq_metrics_json_test
         tests/job_metrics_json_test.cpp
+        src/cli/CommandLine.cpp
+        src/cli/CommandHandlers.cpp
         ${JOBQ_CORE_SOURCES}
     )
 
