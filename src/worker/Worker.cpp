@@ -162,6 +162,8 @@ Worker::Worker(
       metrics_(metrics) {}
 
 void Worker::start() {
+    std::lock_guard<std::mutex> lock(threadMutex_);
+
     if (thread_.joinable()) {
         return;
     }
@@ -170,6 +172,8 @@ void Worker::start() {
 }
 
 void Worker::join() {
+    std::lock_guard<std::mutex> lock(threadMutex_);
+
     if (thread_.joinable()) {
         thread_.join();
     }
