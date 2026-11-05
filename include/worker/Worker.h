@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <mutex>
 #include <thread>
 
 #include "executor/JobExecutor.h"
@@ -37,6 +38,7 @@ private:
     JobExecutor& executor_;
     JobMetrics* metrics_{nullptr};
 
+    mutable std::mutex threadMutex_;
     std::thread thread_;
 };
 
