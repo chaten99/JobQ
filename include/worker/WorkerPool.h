@@ -2,6 +2,7 @@
 
 #include <condition_variable>
 #include <cstddef>
+#include <exception>
 #include <memory>
 #include <mutex>
 #include <vector>
@@ -46,6 +47,8 @@ public:
 
 private:
     void initializeWorkers(std::size_t workerCount);
+
+    std::exception_ptr joinAllWorkers() noexcept;
 
     JobQueue& queue_;
     JobExecutor& executor_;

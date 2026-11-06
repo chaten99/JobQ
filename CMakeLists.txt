@@ -401,4 +401,20 @@ if(BUILD_TESTING)
         COMMAND jobq_worker_shutdown_test
     )
 
+    add_executable(jobq_worker_lifecycle_test
+        tests/worker_lifecycle_test.cpp
+        ${JOBQ_CORE_SOURCES}
+    )
+
+    target_include_directories(jobq_worker_lifecycle_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(jobq_worker_lifecycle_test PRIVATE Threads::Threads)
+
+    add_test(
+        NAME jobq_worker_lifecycle
+        COMMAND jobq_worker_lifecycle_test
+    )
+
 endif()

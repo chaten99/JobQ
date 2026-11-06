@@ -1,5 +1,6 @@
 #include "worker/WorkerPool.h"
 
+#include <exception>
 #include <mutex>
 #include <stdexcept>
 #include <utility>
@@ -50,44 +51,65 @@ void WorkerPool::initializeWorkers(std::size_t workerCount) {
 }
 
 WorkerPool::~WorkerPool() {
-    stop();
+    try {
+        stop();
+    } catch (...) {
+    }
 }
 
 void WorkerPool::start() {
-    std::lock_guard<std::mutex> lock(mutex_);
+    std::exception_ptr failure;
 
-    if (stopping_ || stopped_) {
-        throw std::logic_error(
-            "Worker pool cannot be restarted"
-        );
-    }
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
 
-    if (started_) {
-        throw std::logic_error(
-            "Worker pool has already been started"
-        );
-    }
-
-    try {
-        for (auto& worker : workers_) {
-            worker->start();
+        if (stopping_ || stopped_) {
+            throw std::logic_error(
+                "Worker pool cannot be restarted"
+            );
         }
 
-        started_ = true;
-    } catch (...) {
+        if (started_) {
+            throw std::logic_error(
+                "Worker pool has already been started"
+            );
+        }
+
+        try {
+            for (auto& worker : workers_) {
+                worker->start();
+            }
+
+            started_ = true;
+            return;
+        } catch (...) {
+            failure = std::current_exception();
+            stopping_ = true;
+        }
+    }
+
+    queue_.close();
+    joinAllWorkers();
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
         stopped_ = true;
-        queue_.close();
-
-        for (auto& worker : workers_) {
-            worker->join();
-        }
-
-        stoppedCv_.notify_all();
-        throw;
+        stopping_ = false;
     }
+
+    stoppedCv_.notify_all();
+    std::rethrow_exception(failure);
 }
 
 void WorkerPool::stop() {
+    for (const auto& worker : workers_) {
+        if (worker->isCurrentThread()) {
+            throw std::logic_error(
+                "Worker pool cannot be stopped from one of its own workers"
+            );
+        }
+    }
+
     {
         std::unique_lock<std::mutex> lock(mutex_);
 
@@ -104,12 +126,7 @@ void WorkerPool::stop() {
     }
 
     queue_.close();
-
-    if (started_) {
-        for (auto& worker : workers_) {
-            worker->join();
-        }
-    }
+    std::exception_ptr joinFailure = joinAllWorkers();
 
     {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -118,6 +135,26 @@ void WorkerPool::stop() {
     }
 
     stoppedCv_.notify_all();
+
+    if (joinFailure) {
+        std::rethrow_exception(joinFailure);
+    }
+}
+
+std::exception_ptr WorkerPool::joinAllWorkers() noexcept {
+    std::exception_ptr first;
+
+    for (auto& worker : workers_) {
+        try {
+            worker->join();
+        } catch (...) {
+            if (!first) {
+                first = std::current_exception();
+            }
+        }
+    }
+
+    return first;
 }
 
 std::size_t WorkerPool::size() const {
