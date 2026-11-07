@@ -449,4 +449,21 @@ if(BUILD_TESTING)
         COMMAND jobq_recovery_hardening_test
     )
 
+    add_executable(jobq_fault_injection_test
+        tests/fault_injection_test.cpp
+        ${JOBQ_CORE_SOURCES}
+    )
+
+    target_include_directories(jobq_fault_injection_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+
+    target_link_libraries(jobq_fault_injection_test PRIVATE Threads::Threads)
+
+    add_test(
+        NAME jobq_fault_injection
+        COMMAND jobq_fault_injection_test
+    )
+
 endif()
