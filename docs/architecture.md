@@ -180,15 +180,16 @@ flowchart LR
         Crash --> Restart["JobManager restart"]
         Restart --> Read["Read all journal lines"]
         Read --> Reconcile["Reconcile latest state per Job ID"]
-        Reconcile --> EnqueuePending["Re-enqueue Pending / Running jobs"]
-        Reconcile --> RestoreCompleted["Restore Completed / Failed jobs to registry"]
+        Reconcile --> Validate["Validate every record first"]
+        Validate --> EnqueuePending["Enqueue Pending jobs; fail interrupted Running jobs,<br>then retry them if the policy allows"]
+        Validate --> RestoreCompleted["Restore Completed / Cancelled / exhausted Failed jobs to registry"]
     end
 ```
 
 ### Crash Recovery Guarantees
 - **Incomplete Tail Repair:** If the process is forcefully terminated midway through writing a line, `FileJobStorage` identifies and truncates the corrupted tail record during initialization.
 - **Last-Write-Wins:** Because state transitions append new snapshots to the journal, reading from top to bottom results in the last record reflecting the final known state.
-- **Interrupted Job Recovery:** Jobs that were `Running` at the time of a crash are restored back to `Pending` so that surviving retries or executions can be resumed upon restart.
+- **Interrupted Job Recovery:** Jobs that were `Running` at the time of a crash are treated as a failed attempt (`Running -> Failed`). If retries remain they become `Pending` again and are scheduled as delayed retries; otherwise they stay `Failed`. Attempt counts are never reset. Execution is at-least-once, not exactly-once. See [Persistence and Recovery](persistence-and-recovery.md) and [Reliability](reliability.md).
 
 ---
 

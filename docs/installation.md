@@ -97,7 +97,7 @@ This compiles:
 - `build/jobq.exe` â€” Standalone demo executable.
 - `build/jobq_cli.exe` â€” Main JobQ Command-Line Interface.
 - `build/jobq_stress_test.exe` â€” Concurrency stress test harness.
-- All 19 CTest test binaries.
+- All 24 CTest test binaries.
 
 To build in parallel using all available CPU cores:
 
@@ -111,7 +111,7 @@ cmake --build build --parallel
 
 JobQ includes an extensive automated test suite integrated with **CTest**.
 
-Run all 19 test suites from the root directory:
+Run all 24 test suites from the root directory:
 
 ```powershell
 ctest --test-dir build --output-on-failure
@@ -121,14 +121,14 @@ Expected output:
 ```text
 Test project D:/JobQ/build
       Start  1: jobq_manager_lifecycle
- 1/19 Test  #1: jobq_manager_lifecycle .................   Passed
+ 1/24 Test  #1: jobq_manager_lifecycle .................   Passed
       Start  2: jobq_priority_scheduling
- 2/19 Test  #2: jobq_priority_scheduling ...............   Passed
+ 2/24 Test  #2: jobq_priority_scheduling ...............   Passed
       ...
-      Start 19: jobq_metrics_json
-19/19 Test #19: jobq_metrics_json ......................   Passed
+      Start 24: jobq_fault_injection
+24/24 Test #24: jobq_fault_injection ...................   Passed
 
-100% tests passed out of 19
+100% tests passed out of 24
 ```
 
 To run a single specific test by name (e.g. `jobq_metrics_json`):

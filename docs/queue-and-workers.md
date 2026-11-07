@@ -71,10 +71,21 @@ struct QueueEntryCompare {
 Whenever a job is pushed:
 ```cpp
 bool JobQueue::push(std::shared_ptr<Job> job) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    if (closed_) return false;
-    jobs_.push(QueueEntry{std::move(job), ++sequence_});
-    notEmptyCv_.notify_one();
+    if (!job) {
+        return false;
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+
+        if (closed_) {
+            return false;
+        }
+
+        jobs_.push(QueueEntry{std::move(job), nextSequence_++});
+    }
+
+    condition_.notify_one();
     return true;
 }
 ```
@@ -105,52 +116,39 @@ When worker threads call `waitAndPop()`:
 1. `promoteDueRetriesLocked()` checks `delayedRetries_`. Any job whose `readyAt <= steady_clock::now()` is moved into `jobs_`.
 2. If `jobs_` is non-empty, the top job is popped immediately.
 3. If `jobs_` is empty but `delayedRetries_` contains jobs:
-   - The thread waits on `notEmptyCv_` using `wait_until()` set to the earliest `readyAt` time point.
-4. If both queues are empty, the thread waits indefinitely until notified by a `push()` or `close()`.
+   - The thread waits on `condition_` using `wait_until()` set to the earliest `readyAt` time point.
+4. If both queues are empty, the thread waits indefinitely until notified by a `push()`, `pushRetry()` or `close()`. If the queue is closed and both queues are empty, `nullptr` is returned instead.
+
+Closure, ordering and concurrency guarantees are detailed in [Queue Reliability](queue-reliability.md).
 
 ---
 
 ## 4. Worker Execution Loop
 
-Each `Worker` owns an independent `std::thread`. Its run loop consumes jobs until the queue is closed:
+Each `Worker` owns an independent `std::thread`. Its run loop consumes jobs until `waitAndPop()` returns `nullptr` (queue closed and fully drained). In simplified form:
 
 ```cpp
 void Worker::run() {
-    while (true) {
-        auto job = queue_.waitAndPop();
-        if (!job) {
-            // Queue closed and drained; worker exits loop cleanly
-            break;
-        }
+    try {
+        while (true) {
+            auto job = queue_.waitAndPop();      // exceptions: logged, worker exits
+            if (!job) break;                     // closed and drained
 
-        job->markRunning();
-
-        try {
-            executor_.execute(*job);
-            job->markCompleted();
-        } catch (const std::exception& ex) {
-            if (job->canRetry()) {
-                const auto delay = job->getRetryDelay();
-                job->prepareForRetry();
-                queue_.pushRetry(job, delay);
-            } else {
-                job->markFailed();
-            }
-        } catch (...) {
-            if (job->canRetry()) {
-                const auto delay = job->getRetryDelay();
-                job->prepareForRetry();
-                queue_.pushRetry(job, delay);
-            } else {
-                job->markFailed();
+            try {
+                processJob(job);                 // markRunning, execute, markCompleted,
+            } catch (...) {                      // or fail + retry handling
+                // unexpected error: logged with the job id, loop continues
             }
         }
+    } catch (...) {
     }
 }
 ```
 
+Inside `processJob`, a handler exception marks the job `Failed` (`markFailed()`); if `canRetry()` is true, `prepareForRetry()` returns it to `Pending` and `pushRetry(job, delay)` re-queues it. A retry is counted only when `pushRetry()` returned true. See [Fault Tolerance](fault-tolerance.md) for the exact outcomes and [Worker Lifecycle](worker-lifecycle.md) for the thread-level behaviour.
+
 ### Key Safety Invariants
-- **Worker Resilience:** Handlers throwing exceptions never crash or terminate the worker thread. Exceptions are caught, logged/recorded, and handled according to the job's retry policy.
+- **Worker Resilience:** Handlers throwing exceptions never terminate the worker thread. The per-job layer handles job failures; an outer layer logs anything unexpected.
 - **Graceful Termination:** Workers only exit when `waitAndPop()` returns `nullptr`.
 
 ---
@@ -163,18 +161,22 @@ The `WorkerPool` controls the lifecycles of multiple worker threads:
 class WorkerPool {
 public:
     WorkerPool(JobQueue& queue, JobExecutor& executor, std::size_t workerCount);
+    WorkerPool(JobQueue& queue, JobExecutor& executor, std::size_t workerCount, JobMetrics& metrics);
     ~WorkerPool();
 
-    void start();
-    void stop();
+    void start();                 // throws std::logic_error if already started or stopped
+    void stop();                  // idempotent; throws std::logic_error from a worker thread
     std::size_t size() const;
+    bool isStarted() const;
+    bool isStopped() const;
 };
 ```
 
 ### Coordinated Graceful Shutdown
-1. `stop()` calls `queue_.close()`.
-2. `JobQueue::close()` sets `closed_ = true` and invokes `notEmptyCv_.notify_all()`.
-3. All worker threads waiting on the condition variable wake up.
-4. Workers finish processing any currently running jobs.
-5. Workers see `queue_.waitAndPop() == nullptr` and exit their execution loops.
-6. `WorkerPool::stop()` calls `thread_.join()` on all worker threads, ensuring no dangling threads or memory leaks upon process exit.
+1. `stop()` marks the pool as stopping and calls `queue_.close()`.
+2. `JobQueue::close()` sets `closed_ = true` and notifies all waiting workers.
+3. Workers keep consuming: every accepted ready job and every delayed retry is executed (retries scheduled during shutdown are accepted).
+4. Workers see `waitAndPop() == nullptr` once both heaps are empty and exit.
+5. `stop()` joins every worker thread and marks the pool stopped. Repeated and concurrent calls are safe.
+
+The full policy, scenario table and limitations are in [Graceful Shutdown](graceful-shutdown.md).

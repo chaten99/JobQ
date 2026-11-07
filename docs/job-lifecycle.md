@@ -16,11 +16,11 @@ stateDiagram-v2
     Pending --> Cancelled : markCancelled() (prior to execution)
 
     Running --> Completed : Handler succeeds (markCompleted())
-    Running --> Failed : Retries exhausted (markFailed())
-    Running --> Pending : Failure with remaining retries (prepareForRetry())
+    Running --> Failed : Handler throws (markFailed())
+    Failed --> Pending : Retries remain (prepareForRetry())
 
     Completed --> [*] : Terminal State
-    Failed --> [*] : Terminal State
+    Failed --> [*] : Terminal when retries are exhausted
     Cancelled --> [*] : Terminal State
 ```
 
@@ -71,11 +71,12 @@ void Job::transitionTo(JobStatus expectedCurrent, JobStatus newStatus) {
    - Invoked exclusively by a `Worker` immediately after popping a job from `JobQueue`.
 2. **`Running -> Completed` (`markCompleted()`):**
    - Invoked by the worker when the handler returns normally.
-3. **`Running -> Pending` (`prepareForRetry()`):**
-   - Invoked when a handler throws an exception and `canRetry() == true`.
-   - Atomically increments `attemptsMade_` and resets `status_` to `Pending`.
-4. **`Running -> Failed` (`markFailed()`):**
-   - Invoked when a handler throws an exception and `canRetry() == false`.
+3. **`Running -> Failed` (`markFailed()`):**
+   - Invoked whenever a handler throws, regardless of the retry policy. `attemptsMade_` was already incremented by `markRunning()`.
+4. **`Failed -> Pending` (`prepareForRetry()`):**
+   - Invoked afterwards when `canRetry() == true` (`attemptsMade_ <= maxRetries`). It does not change the attempt count; it only resets `status_` to `Pending` before the job is re-queued with `pushRetry()`.
+   - If `canRetry() == false` the job simply stays `Failed`.
+   - Every transition calls the state observer (the persistence save) *before* the in-memory state changes, so a failing save leaves the job in its previous state.
 5. **`Pending -> Cancelled` (`markCancelled()`):**
    - Invoked if a job is cancelled before a worker claims it.
 
@@ -123,7 +124,7 @@ class Job {
 ### 5. Attempt Tracking (`attemptsMade_`)
 - Tracks how many execution attempts have been made.
 - Starts at `0`.
-- Incremented atomically when `prepareForRetry()` is called.
+- Incremented when `markRunning()` succeeds (that is, when an attempt starts), not by `prepareForRetry()`.
 - Persisted to disk with each snapshot.
 
 ---

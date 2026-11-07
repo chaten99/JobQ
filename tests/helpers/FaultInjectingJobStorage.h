@@ -58,7 +58,6 @@ public:
         std::lock_guard<std::mutex> lock(mutex_);
         failLoad_ = fail;
     }
-
     void setSaveFault(SaveFault fault) {
         std::lock_guard<std::mutex> lock(mutex_);
         saveFault_ = std::move(fault);
