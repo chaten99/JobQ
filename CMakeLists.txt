@@ -417,4 +417,20 @@ if(BUILD_TESTING)
         COMMAND jobq_worker_lifecycle_test
     )
 
+    add_executable(jobq_queue_reliability_test
+        tests/job_queue_reliability_test.cpp
+        ${JOBQ_CORE_SOURCES}
+    )
+
+    target_include_directories(jobq_queue_reliability_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(jobq_queue_reliability_test PRIVATE Threads::Threads)
+
+    add_test(
+        NAME jobq_queue_reliability
+        COMMAND jobq_queue_reliability_test
+    )
+
 endif()

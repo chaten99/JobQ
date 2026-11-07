@@ -67,15 +67,15 @@ void JobQueue::promoteDueRetriesLocked() {
 
     while (!delayedRetries_.empty() &&
            delayedRetries_.top().readyAt <= now) {
-        auto entry = delayedRetries_.top();
-        delayedRetries_.pop();
-
         jobs_.push(
             QueueEntry{
-                std::move(entry.job),
-                nextSequence_++
+                delayedRetries_.top().job,
+                nextSequence_
             }
         );
+
+        ++nextSequence_;
+        delayedRetries_.pop();
     }
 }
 
