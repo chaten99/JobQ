@@ -46,7 +46,7 @@ JobQ/
 â”‚   â”œâ”€â”€ queue/                  # JobQueue implementation
 â”‚   â”œâ”€â”€ storage/                # FileJobStorage and JobRecord serialization
 â”‚   â””â”€â”€ worker/                 # Worker and WorkerPool implementations
-â”œâ”€â”€ tests/                      # Automated CTest test suites (19 test drivers)
+â”œâ”€â”€ tests/                      # Automated CTest test suites (24 test drivers)
 â””â”€â”€ examples/                   # Stress test and concurrency benchmark programs
 ```
 
@@ -97,7 +97,7 @@ Source implementations directly match their respective header headers:
 
 ## 4. Test Directory (`tests/`)
 
-JobQ contains 19 standalone test drivers, each compiled into its own executable and registered with CMake `add_test()`:
+JobQ contains 24 standalone test drivers, each compiled into its own executable and registered with CMake `add_test()`:
 
 | Test Executable | CTest Name | Focus Area |
 |---|---|---|
@@ -120,6 +120,11 @@ JobQ contains 19 standalone test drivers, each compiled into its own executable 
 | `jobq_cli_metrics_test` | `jobq_cli_metrics` | CLI metrics reporting in `run` and standalone `metrics`. |
 | `jobq_metrics_integration_test` | `jobq_metrics_integration` | High-concurrency integration test with `std::latch` and multi-worker contention. |
 | `jobq_metrics_json_test` | `jobq_metrics_json` | JSON schema validation, nanosecond precision, and CLI `--format json`. |
+| `jobq_worker_shutdown_test` | `jobq_worker_shutdown` | Graceful shutdown and queue draining. |
+| `jobq_worker_lifecycle_test` | `jobq_worker_lifecycle` | `Worker` and `WorkerPool` lifecycle hardening. |
+| `jobq_queue_reliability_test` | `jobq_queue_reliability` | Concurrent queue behaviour, closure and delayed retries. |
+| `jobq_recovery_hardening_test` | `jobq_recovery_hardening` | Record validation and recovery of every job state. |
+| `jobq_fault_injection_test` | `jobq_fault_injection` | Fault injection and resilience (helpers in `tests/helpers/`). |
 
 ---
 

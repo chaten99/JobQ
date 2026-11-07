@@ -1,7 +1,10 @@
 #pragma once
 
+#include <condition_variable>
 #include <cstddef>
+#include <exception>
 #include <memory>
+#include <mutex>
 #include <vector>
 
 #include "executor/JobExecutor.h"
@@ -38,8 +41,14 @@ public:
 
     std::size_t size() const;
 
+    bool isStarted() const;
+
+    bool isStopped() const;
+
 private:
     void initializeWorkers(std::size_t workerCount);
+
+    std::exception_ptr joinAllWorkers() noexcept;
 
     JobQueue& queue_;
     JobExecutor& executor_;
@@ -47,7 +56,10 @@ private:
 
     std::vector<std::unique_ptr<Worker>> workers_;
 
+    mutable std::mutex mutex_;
+    mutable std::condition_variable stoppedCv_;
     bool started_{false};
+    bool stopping_{false};
     bool stopped_{false};
 };
 

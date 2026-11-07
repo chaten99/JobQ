@@ -1,6 +1,9 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
+#include <memory>
+#include <mutex>
 #include <thread>
 
 #include "executor/JobExecutor.h"
@@ -19,7 +22,7 @@ public:
         JobMetrics* metrics = nullptr
     );
 
-    ~Worker() = default;
+    ~Worker();
 
     Worker(const Worker&) = delete;
     Worker& operator=(const Worker&) = delete;
@@ -28,8 +31,13 @@ public:
 
     void join();
 
+    bool isCurrentThread() const;
+
 private:
+    enum class State { Created, Running, Joined };
+
     void run();
+    void processJob(const std::shared_ptr<Job>& job);
 
     std::size_t id_;
 
@@ -37,7 +45,11 @@ private:
     JobExecutor& executor_;
     JobMetrics* metrics_{nullptr};
 
+    mutable std::mutex threadMutex_;
+    State state_{State::Created};
     std::thread thread_;
+
+    std::atomic<std::thread::id> threadId_{};
 };
 
 } // namespace jobq

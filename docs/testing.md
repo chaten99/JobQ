@@ -13,7 +13,7 @@ JobQ uses a modular testing philosophy:
 
 ---
 
-## 2. Test Suite Catalog (19 Registered Tests)
+## 2. Test Suite Catalog (24 Registered Tests)
 
 | # | CTest Name | Source File | Description |
 |---|---|---|---|
@@ -36,13 +36,18 @@ JobQ uses a modular testing philosophy:
 | 17 | `jobq_cli_metrics` | `tests/cli_metrics_test.cpp` | Metrics formatting and reporting in `run` and standalone `metrics`. |
 | 18 | `jobq_metrics_integration` | `tests/job_metrics_integration_test.cpp` | Multi-threaded concurrency test with multiple workers and producers under contention. |
 | 19 | `jobq_metrics_json` | `tests/job_metrics_json_test.cpp` | Schema v1 JSON export, nanosecond duration precision, and CLI `--format json`. |
+| 20 | `jobq_worker_shutdown` | `tests/worker_shutdown_test.cpp` | Graceful shutdown: active jobs, queue draining, rejected submissions, repeated stop, stop before start, retry during shutdown. |
+| 21 | `jobq_worker_lifecycle` | `tests/worker_lifecycle_test.cpp` | `Worker` / `WorkerPool` lifecycle hardening: repeated start/join/stop, self-join, destructor safety. |
+| 22 | `jobq_queue_reliability` | `tests/job_queue_reliability_test.cpp` | Concurrent producers/consumers, push versus close, ordering, delayed retries. |
+| 23 | `jobq_recovery_hardening` | `tests/job_recovery_hardening_test.cpp` | Record validation, recovery of every job state, duplicate IDs, next-ID rules, storage failures. |
+| 24 | `jobq_fault_injection` | `tests/fault_injection_test.cpp` | Injected handler, storage, queue and worker failures; corruption; concurrent failure stress; metrics invariants. |
 
 ---
 
 ## 3. Running Tests
 
 ### Run All Tests
-Execute all 19 test suites with failure output enabled:
+Execute all 24 test suites with failure output enabled:
 
 ```powershell
 ctest --test-dir build --output-on-failure
@@ -68,7 +73,64 @@ ctest --test-dir build -R "jobq_cli_*" --output-on-failure
 
 ---
 
-## 4. Adding a New Test Target
+## 4. Phase 9 Reliability Testing
+
+Phase 9 added five test executables. They link `${JOBQ_CORE_SOURCES}` like every other target; `jobq_fault_injection_test` additionally has `tests/` on its include path for the shared helpers in `tests/helpers/`.
+
+| Area | CTest name (executable) | Source | Verifies |
+|---|---|---|---|
+| Graceful shutdown | `jobq_worker_shutdown` (`jobq_worker_shutdown_test`) | `tests/worker_shutdown_test.cpp` | Shutdown waits for an active handler; queued jobs drain; submissions after shutdown are rejected and not counted; repeated and concurrent `stop()`; stop before start; retry during shutdown; persistence compatibility. |
+| Worker lifecycle | `jobq_worker_lifecycle` (`jobq_worker_lifecycle_test`) | `tests/worker_lifecycle_test.cpp` | Worker/pool start and join rules, self-join and self-stop rejection, destructor safety, handler exception survival, start after stop. |
+| Queue concurrency, priority, delayed retries | `jobq_queue_reliability` (`jobq_queue_reliability_test`) | `tests/job_queue_reliability_test.cpp` | Producers/consumers, push versus close, close wake-ups, priority and FIFO, retry timing and promotion, `size()`/`empty()`. |
+| Persistence hardening and recovery | `jobq_recovery_hardening` (`jobq_recovery_hardening_test`) | `tests/job_recovery_hardening_test.cpp` | Record validation, recovery of Pending/Running/Failed/Completed/Cancelled, duplicates, invalid records, next-ID rules, read/write failures, closed-queue recovery, repeated restarts. |
+| Fault injection and metrics under faults | `jobq_fault_injection` (`jobq_fault_injection_test`) | `tests/fault_injection_test.cpp` | Handler, storage, queue, corruption and worker-lifecycle faults; 400-job concurrent failure stress; metrics invariants after every scenario. |
+
+The pre-existing `jobq_priority_scheduling`, `jobq_retry_*`, `jobq_file_storage`, `jobq_crash_recovery` and `jobq_persistence_recovery_regression` tests also cover parts of this area and continue to run unchanged.
+
+### Fault-injection helpers (`tests/helpers/`)
+
+| File | Purpose |
+|---|---|
+| `FaultInjectingJobStorage.h` | In-memory `JobStorage` with switchable read failure and predicate-based save failure; records saves. |
+| `TemporaryDirectory.h` | Unique temp directory for journal files, removed on destruction. |
+| `TestSupport.h` | Bounded-wait `Gate` and `Counter`, `throwsWith`, `waitUntil`, `metricsConsistent`. |
+
+### Running the Phase 9 tests
+
+```powershell
+cmake -S . -B build
+cmake --build build
+ctest --test-dir build --output-on-failure
+
+# Only the reliability tests
+ctest --test-dir build -R "jobq_worker_shutdown|jobq_worker_lifecycle|jobq_queue_reliability|jobq_recovery_hardening|jobq_fault_injection" --output-on-failure
+
+# One test, repeated to look for intermittent failures
+ctest --test-dir build -R jobq_fault_injection --repeat until-fail:20 --timeout 120
+```
+
+Each executable can also be run directly, for example `.\build\jobq_fault_injection_test.exe`; it prints one `[PASS]`/`[FAIL]` line per check and exits non-zero on failure.
+
+### Special conditions
+
+- The tests use bounded waits (10 s) and condition variables or promises for synchronization. Delayed-retry tests use real 100-200 ms delays because they test elapsed time.
+- Journal tests use unique temp directories and remove them afterwards; no project storage file is touched.
+- Run `ctest` from the shell that built the project. On Windows, a shell without the toolchain on `PATH` makes test binaries fail with `0xc0000139`.
+- `jobq_fault_injection` takes a few seconds (the stress scenario runs 400-job workloads on 6 workers).
+
+### Not deterministically tested
+
+- `std::thread` creation failure and the `WorkerPool::start()` rollback (needs a production thread-factory hook; reviewed in code only).
+- Allocation failure inside `JobQueue` promotion.
+- An unexpected exception escaping `Worker::processJob` or a throwing `waitAndPop()`.
+- A failing `Cancelled` save after a rejected submission.
+- Real process kills and OS-level write loss; crash recovery is tested by seeding or hand-writing journal records.
+
+See [Fault Tolerance](fault-tolerance.md) for the matrix of scenarios and [Reliability](reliability.md) for the guarantees these tests back.
+
+---
+
+## 5. Adding a New Test Target
 
 To add a new test to the project:
 

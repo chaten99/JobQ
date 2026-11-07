@@ -34,12 +34,12 @@ It is essential to distinguish between a **submitted job** and an **execution at
 - **Execution Attempt:** An individual invocation of the registered handler by a worker.
 
 If a job is configured with `maxRetries = 3`:
-- Initial execution: Attempt 1 (`attemptsMade = 0` prior to execution).
-- If it fails: `prepareForRetry()` increments `attemptsMade` to `1`.
-- First retry: Attempt 2.
-- Second retry: Attempt 3 (`attemptsMade = 2`).
-- Third retry: Attempt 4 (`attemptsMade = 3`).
-- If attempt 4 fails: `canRetry()` returns `false`, and the job transitions to `JobStatus::Failed`.
+- Initial execution: Attempt 1 (`attemptsMade = 0` before it starts; `markRunning()` makes it `1`).
+- If it fails: `markFailed()`, then `canRetry()` (`attemptsMade <= maxRetries`) is true and `prepareForRetry()` returns the job to `Pending`.
+- First retry: Attempt 2 (`attemptsMade = 2` once running).
+- Second retry: Attempt 3 (`attemptsMade = 3`).
+- Third retry: Attempt 4 (`attemptsMade = 4`).
+- If attempt 4 fails: `canRetry()` returns `false` (`4 > 3`), and the job stays `Failed`.
 
 Total executions can equal up to `1 + maxRetries`.
 
@@ -127,7 +127,8 @@ When JobQ is configured with persistent storage (`FileJobStorage`):
 - `attemptsMade` is serialized in the journal alongside the job status and retry policy.
 - If the application crashes while a job is running or waiting in the retry queue:
   - Upon startup, `JobManager::restoreStoredJobs()` inspects the latest journal record.
-  - Jobs in `Running` or `Pending` state are reloaded.
+  - Jobs in `Running`, `Failed` (with retries left) or `Pending` state are reloaded. An interrupted `Running` job counts as a failed attempt first.
   - The job retains its existing `attemptsMade` count.
-  - If `attemptsMade < maxRetries`, the job is re-enqueued as `Pending` and is eligible for its remaining retries.
+  - If `attemptsMade <= maxRetries`, the job is re-enqueued as `Pending` through the delayed-retry path (`pushRetry()` with the backoff delay computed from its attempt count, restarted at recovery time) and is eligible for its remaining retries.
+  - Once `attemptsMade > maxRetries` the job stays `Failed` and is not re-queued.
   - Previous attempts are never forgotten, preventing infinite retry loops across process restarts.

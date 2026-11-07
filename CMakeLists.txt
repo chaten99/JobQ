@@ -385,4 +385,85 @@ if(BUILD_TESTING)
         COMMAND jobq_metrics_json_test
     )
 
+    add_executable(jobq_worker_shutdown_test
+        tests/worker_shutdown_test.cpp
+        ${JOBQ_CORE_SOURCES}
+    )
+
+    target_include_directories(jobq_worker_shutdown_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(jobq_worker_shutdown_test PRIVATE Threads::Threads)
+
+    add_test(
+        NAME jobq_worker_shutdown
+        COMMAND jobq_worker_shutdown_test
+    )
+
+    add_executable(jobq_worker_lifecycle_test
+        tests/worker_lifecycle_test.cpp
+        ${JOBQ_CORE_SOURCES}
+    )
+
+    target_include_directories(jobq_worker_lifecycle_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(jobq_worker_lifecycle_test PRIVATE Threads::Threads)
+
+    add_test(
+        NAME jobq_worker_lifecycle
+        COMMAND jobq_worker_lifecycle_test
+    )
+
+    add_executable(jobq_queue_reliability_test
+        tests/job_queue_reliability_test.cpp
+        ${JOBQ_CORE_SOURCES}
+    )
+
+    target_include_directories(jobq_queue_reliability_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(jobq_queue_reliability_test PRIVATE Threads::Threads)
+
+    add_test(
+        NAME jobq_queue_reliability
+        COMMAND jobq_queue_reliability_test
+    )
+
+    add_executable(jobq_recovery_hardening_test
+        tests/job_recovery_hardening_test.cpp
+        ${JOBQ_CORE_SOURCES}
+    )
+
+    target_include_directories(jobq_recovery_hardening_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(jobq_recovery_hardening_test PRIVATE Threads::Threads)
+
+    add_test(
+        NAME jobq_recovery_hardening
+        COMMAND jobq_recovery_hardening_test
+    )
+
+    add_executable(jobq_fault_injection_test
+        tests/fault_injection_test.cpp
+        ${JOBQ_CORE_SOURCES}
+    )
+
+    target_include_directories(jobq_fault_injection_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests
+    )
+
+    target_link_libraries(jobq_fault_injection_test PRIVATE Threads::Threads)
+
+    add_test(
+        NAME jobq_fault_injection
+        COMMAND jobq_fault_injection_test
+    )
+
 endif()

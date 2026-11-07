@@ -23,6 +23,8 @@ struct JobRecord {
     std::size_t attemptsMade{0};
 };
 
+void validateJobRecord(const JobRecord& record);
+
 std::string serializeJobRecord(const JobRecord& record);
 
 JobRecord deserializeJobRecord(std::string_view serialized);

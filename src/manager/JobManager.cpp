@@ -4,6 +4,7 @@
 #include <limits>
 #include <mutex>
 #include <stdexcept>
+#include <string>
 #include <unordered_set>
 #include <utility>
 #include <vector>
@@ -40,13 +41,6 @@ JobStateObserver makeObserver(
         storage->save(toJobRecord(snapshot));
     };
 }
-
-bool isExecutionState(JobStatus status) {
-    return status == JobStatus::Running ||
-           status == JobStatus::Completed ||
-           status == JobStatus::Failed;
-}
-
 void recordJobSubmittedSafely(JobMetrics* metrics) noexcept {
     if (!metrics) {
         return;
@@ -121,15 +115,15 @@ void JobManager::restoreStoredJobs() {
     std::unordered_set<uint64_t> seenIds;
     seenIds.reserve(records.size());
 
-    std::vector<std::shared_ptr<Job>> jobsToSchedule;
-    jobsToSchedule.reserve(records.size());
-
     uint64_t nextId = 1;
 
     for (const auto& record : records) {
-        if (record.id == 0) {
+        try {
+            validateJobRecord(record);
+        } catch (const std::invalid_argument& error) {
             throw std::runtime_error(
-                "Storage returned a job with ID zero"
+                "Stored job " + std::to_string(record.id) +
+                " is invalid: " + error.what()
             );
         }
 
@@ -141,26 +135,20 @@ void JobManager::restoreStoredJobs() {
 
         if (!seenIds.insert(record.id).second) {
             throw std::runtime_error(
-                "Storage returned duplicate job IDs"
+                "Storage returned duplicate job IDs: " +
+                std::to_string(record.id)
             );
         }
 
-        if ((record.status == JobStatus::Pending ||
-             record.status == JobStatus::Cancelled) &&
-            record.attemptsMade > record.retryPolicy.maxRetries) {
-            throw std::runtime_error(
-                "Stored job has an invalid attempt count for its status"
-            );
+        if (record.id >= nextId) {
+            nextId = record.id + 1;
         }
+    }
 
-        if (isExecutionState(record.status) &&
-            record.attemptsMade > record.retryPolicy.maxRetries &&
-            record.attemptsMade - record.retryPolicy.maxRetries > 1) {
-            throw std::runtime_error(
-                "Stored job exceeds its allowed execution attempts"
-            );
-        }
+    std::vector<std::shared_ptr<Job>> jobsToSchedule;
+    jobsToSchedule.reserve(records.size());
 
+    for (const auto& record : records) {
         auto job = std::make_shared<Job>(
             record.id,
             record.type,
@@ -172,16 +160,7 @@ void JobManager::restoreStoredJobs() {
             createStateObserver()
         );
 
-        const auto [iterator, inserted] =
-            jobs_.emplace(record.id, job);
-
-        if (!inserted) {
-            throw std::runtime_error(
-                "Failed to register a recovered job"
-            );
-        }
-
-        (void)iterator;
+        jobs_.emplace(record.id, job);
 
         if (job->getStatus() == JobStatus::Running) {
             job->markFailed();
@@ -202,10 +181,6 @@ void JobManager::restoreStoredJobs() {
         if (job->getStatus() == JobStatus::Pending) {
             jobsToSchedule.push_back(job);
         }
-
-        if (record.id >= nextId) {
-            nextId = record.id + 1;
-        }
     }
 
     nextId_.store(nextId, std::memory_order_relaxed);
@@ -225,7 +200,8 @@ void JobManager::restoreStoredJobs() {
 
         if (!accepted) {
             throw std::runtime_error(
-                "Failed to enqueue a recovered job"
+                "Failed to enqueue recovered job " +
+                std::to_string(job->getId())
             );
         }
 

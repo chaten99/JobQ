@@ -4,9 +4,9 @@ This document outlines the current verified capabilities of JobQ, active develop
 
 ---
 
-## 1. Verified & Implemented Capabilities (Phases 1â€“8)
+## 1. Verified & Implemented Capabilities (Phases 1-9)
 
-The following capabilities have been fully implemented, integrated, and verified against the 19 automated CTest test suites:
+The following capabilities have been fully implemented, integrated, and verified against the 24 automated CTest test suites:
 
 ### Core Task Model & State Machine
 - [x] Strongly-typed `Job` entity with atomic ID allocation.
@@ -46,15 +46,25 @@ The following capabilities have been fully implemented, integrated, and verified
 - [x] Standard-compliant JSON metrics export adhering to Schema Version 1 with nanosecond duration precision.
 - [x] CLI `--format text` and `--format json` output options.
 
+### Reliability & Fault Tolerance (Phase 9)
+- [x] 9.1 Graceful shutdown: close-and-drain `WorkerPool::stop()`, idempotent and concurrent-safe (`jobq_worker_shutdown`).
+- [x] 9.2 Worker lifecycle hardening: single-use `Worker`, safe join/destroy, exception boundary, partial-startup rollback (`jobq_worker_lifecycle`).
+- [x] 9.3 Queue reliability: atomic push-versus-close, exception-safe retry promotion, concurrency tests (`jobq_queue_reliability`).
+- [x] 9.4 Persistence and recovery hardening: record-level validation, validate-first recovery, next-ID rules (`jobq_recovery_hardening`).
+- [x] 9.5 Fault injection and resilience tests (`jobq_fault_injection`).
+- [x] 9.6 Reliability documentation: [Reliability Guide](reliability.md) and companion guides.
+
+Known reliability limits (at-least-once execution, no `fsync`, no cross-process locking, no handler timeouts) are listed in the [Reliability Guide](reliability.md#5-known-limitations).
+
 ### Test Automation
-- [x] 19 automated test suites integrated with CTest.
+- [x] 24 automated test suites integrated with CTest.
 - [x] Concurrency stress tests and deterministic latch-based synchronization proofs.
 
 ---
 
 ## 2. In Progress
 
-- **Phase 8, Commit 8.6:** Complete project documentation, architecture diagrams, and developer guide.
+- No phase is currently in progress.
 
 ---
 
@@ -64,23 +74,23 @@ The following capabilities have been fully implemented, integrated, and verified
 > The features listed below are **planned design milestones**. They are not currently implemented in the codebase.
 > Current JobQ persistence and queueing operate on a single host within a single process; they do not automatically provide multi-process distributed coordination.
 
-### Phase 9: Library Packaging & Public C++ SDK
+### Phase 10: Library Packaging & Public C++ SDK
 - [ ] CMake target export (`find_package(JobQ)`) and header installation.
 - [ ] Reusable shared/static library targets (`libjobq`).
 - [ ] Ergonomic single-include top-level header (`jobq/jobq.h`).
 - [ ] C++20 module interface support (`jobq.ixx`).
 
-### Phase 10: Long-Running Daemon & Journal Compaction
+### Phase 11: Long-Running Daemon & Journal Compaction
 - [ ] Background daemon mode with signal handling (`SIGINT`, `SIGTERM`).
 - [ ] Journal compaction / snapshot vacuuming to prevent unbounded growth of append-only log files.
 - [ ] Dynamic worker pool scaling (resizing active workers at runtime).
 
-### Phase 11: HTTP API & Web Dashboard
+### Phase 12: HTTP API & Web Dashboard
 - [ ] Embedded HTTP REST API server for remote job submission and status inspection.
 - [ ] WebSocket streaming of live runtime metrics and worker states.
 - [ ] Modern web dashboard (React / Vite) for visualizing queue throughput, worker health, and failure logs.
 
-### Phase 12: Distributed Queue Backend
+### Phase 13: Distributed Queue Backend
 - [ ] Distributed storage and locking adapter (e.g., Redis or Raft-backed cluster).
 - [ ] Multiple independent worker processes consuming from a shared distributed queue.
 - [ ] Heartbeat mechanisms and worker lease timeouts for dead worker detection.
