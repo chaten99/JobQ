@@ -433,4 +433,20 @@ if(BUILD_TESTING)
         COMMAND jobq_queue_reliability_test
     )
 
+    add_executable(jobq_recovery_hardening_test
+        tests/job_recovery_hardening_test.cpp
+        ${JOBQ_CORE_SOURCES}
+    )
+
+    target_include_directories(jobq_recovery_hardening_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(jobq_recovery_hardening_test PRIVATE Threads::Threads)
+
+    add_test(
+        NAME jobq_recovery_hardening
+        COMMAND jobq_recovery_hardening_test
+    )
+
 endif()

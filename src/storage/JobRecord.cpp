@@ -202,7 +202,7 @@ JobPriority parsePriority(std::string_view value) {
     );
 }
 
-void validateRecord(const JobRecord& record) {
+void validateRecordImpl(const JobRecord& record) {
     if (record.id == 0) {
         throw std::invalid_argument(
             "Job ID must be greater than zero"
@@ -250,12 +250,35 @@ void validateRecord(const JobRecord& record) {
             "Running, completed, and failed jobs must have an attempt"
         );
     }
+
+    const bool isIdleState =
+        record.status == JobStatus::Pending ||
+        record.status == JobStatus::Cancelled;
+
+    if (isIdleState &&
+        record.attemptsMade > record.retryPolicy.maxRetries) {
+        throw std::invalid_argument(
+            "Attempt count exceeds the retry policy for a non-executing job"
+        );
+    }
+
+    if (!isIdleState &&
+        record.attemptsMade > record.retryPolicy.maxRetries &&
+        record.attemptsMade - record.retryPolicy.maxRetries > 1) {
+        throw std::invalid_argument(
+            "Attempt count exceeds the retry policy"
+        );
+    }
 }
 
 } // namespace
 
+void validateJobRecord(const JobRecord& record) {
+    validateRecordImpl(record);
+}
+
 std::string serializeJobRecord(const JobRecord& record) {
-    validateRecord(record);
+    validateJobRecord(record);
 
     std::ostringstream output;
 
@@ -341,7 +364,7 @@ JobRecord deserializeJobRecord(std::string_view serialized) {
     record.type = hexDecode(fields[9]);
     record.payload = hexDecode(fields[10]);
 
-    validateRecord(record);
+    validateJobRecord(record);
 
     return record;
 }
