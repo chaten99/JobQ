@@ -208,22 +208,22 @@ What JobQ does **not** provide: exactly-once execution (it is at-least-once), cr
 
 ```text
 JobQ/
-â”œâ”€â”€ CMakeLists.txt              # CMake configuration and CTest test targets
-â”œâ”€â”€ README.md                   # This project overview
-â”œâ”€â”€ CONTRIBUTING.md             # Developer workflow and guidelines
-â”œâ”€â”€ docs/                       # Full project documentation suite
-â”œâ”€â”€ include/                    # Public C++20 headers
-â”‚   â”œâ”€â”€ cli/                    # CLI parsing and command dispatch
-â”‚   â”œâ”€â”€ executor/               # JobExecutor handler registry
-â”‚   â”œâ”€â”€ job/                    # Job model, status, priority, and retry policy
-â”‚   â”œâ”€â”€ manager/                # JobManager and in-memory registry
-â”‚   â”œâ”€â”€ metrics/                # JobMetrics and JSON export
-â”‚   â”œâ”€â”€ queue/                  # JobQueue priority queue and delayed retries
-â”‚   â”œâ”€â”€ storage/                # FileJobStorage and JobRecord
-â”‚   â””â”€â”€ worker/                 # Worker thread and WorkerPool
-â”œâ”€â”€ src/                        # Implementations and main entry points
-â”œâ”€â”€ tests/                      # 24 standalone automated test drivers
-â””â”€â”€ examples/                   # Stress test and concurrency benchmark programs
+CMakeLists.txt              # CMake configuration and CTest test targets
+README.md                   # This project overview
+CONTRIBUTING.md             # Developer workflow and guidelines
+docs/                       # Full project documentation suite
+include/                    # Public C++20 headers
+cli/                    # CLI parsing and command dispatch
+executor/               # JobExecutor handler registry
+job/                    # Job model, status, priority, and retry policy
+manager/                # JobManager and in-memory registry
+metrics/                # JobMetrics and JSON export
+queue/                  # JobQueue priority queue and delayed retries
+storage/                # FileJobStorage and JobRecord
+worker/                 # Worker thread and WorkerPool
+src/                        # Implementations and main entry points
+tests/                      # 24 standalone automated test drivers
+examples/                   # Stress test and concurrency benchmark programs
 ```
 
 ---
