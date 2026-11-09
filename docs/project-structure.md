@@ -128,6 +128,12 @@ JobQ contains 24 standalone test drivers, each compiled into its own executable 
 
 ---
 
+## Benchmarks Directory (`benchmarks/`)
+
+- **`benchmarks/throughput_benchmark.cpp`**: configurable throughput benchmark (CMake target `jobq_throughput_benchmark`, not run by CTest). See [Benchmarking](benchmarking.md).
+
+---
+
 ## 5. Examples Directory (`examples/`)
 
 - **`examples/stress_test.cpp`**: Multi-threaded stress test demonstrating concurrent job submission across multiple producer threads while a worker pool executes jobs under contention.

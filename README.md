@@ -201,6 +201,7 @@ What JobQ does **not** provide: exactly-once execution (it is at-least-once), cr
 | [Queue Reliability](docs/queue-reliability.md) | Concurrency, closure, ordering and delayed-retry behaviour. |
 | [Fault Tolerance](docs/fault-tolerance.md) | Failure scenarios, fault-handling matrix, known gaps. |
 | [Troubleshooting](docs/troubleshooting.md) | Diagnosing build, runtime and persistence problems safely. |
+| [Benchmarking](docs/benchmarking.md) | Throughput benchmark scenarios, options, methodology and limitations. |
 
 ---
 
