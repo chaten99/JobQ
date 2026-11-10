@@ -9,7 +9,9 @@
 #include <iostream>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <ostream>
+#include <sstream>
 #include <streambuf>
 #include <string>
 #include <string_view>
@@ -19,7 +21,9 @@
 #include "executor/JobExecutor.h"
 #include "job/Job.h"
 #include "manager/JobManager.h"
+#include "metrics/ExecutionObserver.h"
 #include "metrics/JobMetrics.h"
+#include "metrics/LatencyStatistics.h"
 #include "queue/JobQueue.h"
 #include "worker/WorkerPool.h"
 
@@ -30,6 +34,7 @@ using SteadyClock = std::chrono::steady_clock;
 constexpr std::uint64_t kMaxJobs = 2'000'000;
 constexpr std::uint64_t kMaxWorkers = 256;
 constexpr std::uint64_t kMaxRuns = 100;
+constexpr std::uint64_t kMaxPooledSamples = 5000000;
 
 enum class Scenario { Noop, Lightweight, Mixed };
 
@@ -39,6 +44,7 @@ struct Config {
     Scenario scenario{Scenario::Noop};
     std::uint64_t runs{3};
     std::uint64_t warmupJobs{1000};
+    bool latency{true};
 };
 
 struct ParseOutcome {
@@ -72,6 +78,7 @@ void printUsage(std::ostream& out) {
         << kMaxRuns << " (default 3)\n"
         << "  --warmup-jobs N    Jobs in the unmeasured warmup run, 0.."
         << kMaxJobs << " (default 1000; 0 disables warmup)\n"
+        << "  --no-latency       Disable latency collection (throughput only)\n"
         << "  --help             Show this message\n"
            "\n"
            "Options accept both '--name value' and '--name=value'.\n"
@@ -131,6 +138,11 @@ ParseOutcome parseArguments(int argc, char** argv, Config& config) {
         if (argument == "--help" || argument == "-h") {
             outcome.help = true;
             return outcome;
+        }
+
+        if (argument == "--no-latency") {
+            config.latency = false;
+            continue;
         }
 
         std::string name = argument;
@@ -323,9 +335,121 @@ struct RunResult {
     double metricsTotalMs{0.0};
     double metricsAverageUs{0.0};
     double metricsThroughput{0.0};
+
+    bool latencyCollected{false};
+    jobq::LatencySamples queueWait;
+    jobq::LatencySamples executionSuccess;
+    jobq::LatencySamples executionFailure;
+    jobq::LatencySamples endToEnd;
 };
 
-RunResult runOnce(Scenario scenario, std::uint64_t jobs, std::uint64_t workers) {
+class LatencyCollector final : public jobq::ExecutionObserver {
+public:
+    LatencyCollector(
+        std::size_t workers,
+        std::size_t expectedJobs,
+        const std::vector<SteadyClock::time_point>& submitStarts
+    )
+        : slots_(workers), submitStarts_(submitStarts) {
+        const std::size_t reserve =
+            expectedJobs / workers + expectedJobs / 8 + 16;
+
+        for (auto& slot : slots_) {
+            slot.queueWait.reserve(reserve);
+            slot.executionSuccess.reserve(reserve);
+            slot.endToEnd.reserve(reserve);
+        }
+    }
+
+    void onExecutionFinished(
+        const jobq::ExecutionSample& sample
+    ) noexcept override {
+        if (sample.workerId == 0 || sample.workerId > slots_.size()) {
+            invalid_.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+
+        Slot& slot = slots_[sample.workerId - 1];
+
+        try {
+            const auto wait =
+                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    sample.queueWait
+                );
+            const auto execution =
+                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    sample.executionDuration
+                );
+
+            if (wait.count() < 0 || execution.count() < 0) {
+                ++slot.invalid;
+                return;
+            }
+
+            slot.queueWait.add(wait);
+
+            if (!sample.succeeded) {
+                slot.executionFailure.add(execution);
+                return;
+            }
+
+            slot.executionSuccess.add(execution);
+
+            if (sample.jobId == 0 || sample.jobId >= submitStarts_.size()) {
+                ++slot.invalid;
+                return;
+            }
+
+            const auto total =
+                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    sample.finishedAt - submitStarts_[sample.jobId]
+                );
+
+            if (total.count() < 0) {
+                ++slot.invalid;
+                return;
+            }
+
+            slot.endToEnd.add(total);
+        } catch (...) {
+            ++slot.invalid;
+        }
+    }
+
+    std::uint64_t collect(RunResult& result) {
+        std::uint64_t invalid = invalid_.load();
+
+        for (auto& slot : slots_) {
+            result.queueWait.merge(slot.queueWait);
+            result.executionSuccess.merge(slot.executionSuccess);
+            result.executionFailure.merge(slot.executionFailure);
+            result.endToEnd.merge(slot.endToEnd);
+            invalid += slot.invalid;
+        }
+
+        return invalid;
+    }
+
+private:
+    struct alignas(64) Slot {
+        jobq::LatencySamples queueWait;
+        jobq::LatencySamples executionSuccess;
+        jobq::LatencySamples executionFailure;
+        jobq::LatencySamples endToEnd;
+        std::uint64_t invalid{0};
+    };
+
+    std::vector<Slot> slots_;
+    const std::vector<SteadyClock::time_point>& submitStarts_;
+    std::atomic<std::uint64_t> invalid_{0};
+};
+
+RunResult runOnce(
+    Scenario scenario,
+    std::uint64_t jobs,
+    std::uint64_t workers,
+    bool collectLatency
+) {
     RunResult result;
     result.requested = jobs;
 
@@ -355,9 +479,35 @@ RunResult runOnce(Scenario scenario, std::uint64_t jobs, std::uint64_t workers) 
         );
     }
 
-    jobq::WorkerPool pool(
-        queue, executor, static_cast<std::size_t>(workers), metrics
-    );
+    std::vector<SteadyClock::time_point> submitStarts;
+    std::unique_ptr<LatencyCollector> collector;
+
+    if (collectLatency) {
+        submitStarts.resize(static_cast<std::size_t>(jobs) + 1);
+        collector = std::make_unique<LatencyCollector>(
+            static_cast<std::size_t>(workers),
+            static_cast<std::size_t>(jobs),
+            submitStarts
+        );
+    }
+
+    std::unique_ptr<jobq::WorkerPool> poolOwner;
+
+    if (collector) {
+        poolOwner = std::make_unique<jobq::WorkerPool>(
+            queue,
+            executor,
+            static_cast<std::size_t>(workers),
+            metrics,
+            *collector
+        );
+    } else {
+        poolOwner = std::make_unique<jobq::WorkerPool>(
+            queue, executor, static_cast<std::size_t>(workers), metrics
+        );
+    }
+
+    jobq::WorkerPool& pool = *poolOwner;
 
     std::vector<std::shared_ptr<jobq::Job>> accepted;
     accepted.reserve(static_cast<std::size_t>(jobs));
@@ -377,6 +527,11 @@ RunResult runOnce(Scenario scenario, std::uint64_t jobs, std::uint64_t workers) 
     try {
         for (std::uint64_t i = 1; i <= jobs; ++i) {
             const auto& kind = kinds[kindIndexFor(scenario, i)];
+
+            if (collectLatency) {
+                submitStarts[i] = SteadyClock::now();
+            }
+
             accepted.push_back(manager.submit(kind.type, "payload"));
         }
     } catch (const std::exception& exception) {
@@ -478,6 +633,48 @@ RunResult runOnce(Scenario scenario, std::uint64_t jobs, std::uint64_t workers) 
         problems.push_back("workload checksum mismatch");
     }
 
+    if (collectLatency) {
+        result.latencyCollected = true;
+
+        const std::uint64_t invalidSamples = collector->collect(result);
+
+        if (invalidSamples != 0) {
+            problems.push_back(
+                std::to_string(invalidSamples) + " invalid latency sample(s)"
+            );
+        }
+        if (result.queueWait.count() != result.started) {
+            problems.push_back(
+                "queue wait samples (" +
+                std::to_string(result.queueWait.count()) +
+                ") != started executions (" +
+                std::to_string(result.started) + ")"
+            );
+        }
+        if (result.executionSuccess.count() != result.completed ||
+            result.executionFailure.count() != result.failed) {
+            problems.push_back(
+                "execution samples (" +
+                std::to_string(result.executionSuccess.count()) + " ok / " +
+                std::to_string(result.executionFailure.count()) +
+                " failed) do not match completed/failed counts"
+            );
+        }
+        if (result.endToEnd.count() != result.completed) {
+            problems.push_back("end-to-end samples != completed jobs");
+        }
+
+        const auto okTotal = result.executionSuccess.total();
+        const auto failTotal = result.executionFailure.total();
+
+        if (!okTotal || !failTotal ||
+            *okTotal + *failTotal != snapshot.totalExecutionTime) {
+            problems.push_back(
+                "execution samples do not sum to the JobMetrics total"
+            );
+        }
+    }
+
     if (!problems.empty()) {
         for (std::size_t i = 0; i < problems.size(); ++i) {
             result.error += (i ? "; " : "") + problems[i];
@@ -505,6 +702,72 @@ double median(std::vector<double> values) {
     }
 
     return (values[count / 2 - 1] + values[count / 2]) / 2.0;
+}
+
+std::string formatNanoseconds(double nanoseconds) {
+    std::ostringstream text;
+    text << std::fixed;
+
+    if (nanoseconds < 1000.0) {
+        text << std::setprecision(0) << nanoseconds << " ns";
+    } else if (nanoseconds < 1'000'000.0) {
+        text << std::setprecision(2) << nanoseconds / 1000.0 << " us";
+    } else if (nanoseconds < 1'000'000'000.0) {
+        text << std::setprecision(3) << nanoseconds / 1'000'000.0 << " ms";
+    } else {
+        text << std::setprecision(3) << nanoseconds / 1'000'000'000.0 << " s";
+    }
+
+    return text.str();
+}
+
+std::string formatDuration(std::chrono::nanoseconds duration) {
+    return formatNanoseconds(static_cast<double>(duration.count()));
+}
+
+void printLatencyLine(
+    std::ostream& out,
+    const std::string& label,
+    const jobq::LatencySamples& samples
+) {
+    const auto summary = samples.summarize();
+
+    out << "  " << std::left << std::setw(14) << label << std::right
+        << " n=" << samples.count();
+
+    if (!summary) {
+        out << "  (no samples)\n";
+        return;
+    }
+
+    out << "  avg " << formatNanoseconds(summary->averageNanoseconds)
+        << "  p50 " << formatDuration(summary->p50)
+        << "  p95 " << formatDuration(summary->p95)
+        << "  p99 " << formatDuration(summary->p99) << '\n';
+}
+
+void printSummaryBlock(
+    std::ostream& out,
+    const std::string& title,
+    const jobq::LatencySamples& samples
+) {
+    out << title << "\n\n"
+        << "  Samples:              " << samples.count() << '\n';
+
+    const auto summary = samples.summarize();
+
+    if (!summary) {
+        out << "  No samples collected (statistics not available).\n\n";
+        return;
+    }
+
+    out << "  Minimum:              " << formatDuration(summary->minimum) << '\n'
+        << "  Maximum:              " << formatDuration(summary->maximum) << '\n'
+        << "  Average:              "
+        << formatNanoseconds(summary->averageNanoseconds) << '\n'
+        << "  P50:                  " << formatDuration(summary->p50) << '\n'
+        << "  P95:                  " << formatDuration(summary->p95) << '\n'
+        << "  P99:                  " << formatDuration(summary->p99) << "\n\n";
 }
 
 void printRun(
@@ -541,6 +804,13 @@ void printRun(
         << "  Metrics Lifetime Rate:" << ' ' << run.metricsThroughput
         << " jobs/sec (JobMetrics, not the benchmark result)\n";
 
+    if (run.latencyCollected) {
+        printLatencyLine(out, "Queue Wait", run.queueWait);
+        printLatencyLine(out, "Exec (ok)", run.executionSuccess);
+        printLatencyLine(out, "Exec (failed)", run.executionFailure);
+        printLatencyLine(out, "End-to-End", run.endToEnd);
+    }
+
     if (!run.ok) {
         out << "  ERROR: " << run.error << '\n';
     }
@@ -573,6 +843,9 @@ int main(int argc, char** argv) {
               << "  Workers:              " << config.workers << '\n'
               << "  Repetitions:          " << config.runs << '\n'
               << "  Warmup Jobs:          " << config.warmupJobs << '\n'
+              << "  Latency Collection:   "
+              << (config.latency ? "enabled" : "disabled (--no-latency)")
+              << '\n'
               << "  Per-job logging:      suppressed during runs\n\n"
               << std::flush;
 
@@ -580,7 +853,12 @@ int main(int argc, char** argv) {
 
     if (config.warmupJobs > 0) {
         const auto warmup =
-            runOnce(config.scenario, config.warmupJobs, config.workers);
+            runOnce(
+                config.scenario,
+                config.warmupJobs,
+                config.workers,
+                config.latency
+            );
 
         if (!warmup.ok) {
             std::cout << "Warmup run FAILED: " << warmup.error << "\n\n";
@@ -593,16 +871,37 @@ int main(int argc, char** argv) {
 
     std::vector<double> throughputs;
 
+    const bool poolLatency =
+        config.latency && config.jobs * config.runs <= kMaxPooledSamples;
+    jobq::LatencySamples pooledWait;
+    jobq::LatencySamples pooledOk;
+    jobq::LatencySamples pooledFailed;
+    jobq::LatencySamples pooledEndToEnd;
+    std::size_t pooledRuns = 0;
+
     std::cout << "Run Results\n\n";
 
     for (std::uint64_t run = 1; run <= config.runs && allOk; ++run) {
         const auto result =
-            runOnce(config.scenario, config.jobs, config.workers);
+            runOnce(
+                config.scenario,
+                config.jobs,
+                config.workers,
+                config.latency
+            );
 
         printRun(std::cout, run, config, result);
 
         if (result.ok) {
             throughputs.push_back(result.throughput);
+
+            if (poolLatency) {
+                pooledWait.merge(result.queueWait);
+                pooledOk.merge(result.executionSuccess);
+                pooledFailed.merge(result.executionFailure);
+                pooledEndToEnd.merge(result.endToEnd);
+                ++pooledRuns;
+            }
         } else {
             allOk = false;
         }
@@ -629,6 +928,27 @@ int main(int argc, char** argv) {
                   << " jobs/sec\n\n";
     } else {
         std::cout << "  No successful runs; no throughput reported.\n\n";
+    }
+
+    if (config.latency && pooledRuns > 0) {
+        std::cout << "========== Latency Statistics ==========\n\n"
+                  << "Pooled over " << pooledRuns << " successful measured run(s); "
+                  << "per-attempt samples, nearest-rank percentiles.\n\n";
+        printSummaryBlock(std::cout, "Queue Waiting Time", pooledWait);
+        printSummaryBlock(
+            std::cout, "Execution Duration (successful attempts)", pooledOk
+        );
+        printSummaryBlock(
+            std::cout, "Execution Duration (failed attempts)", pooledFailed
+        );
+        printSummaryBlock(
+            std::cout, "End-to-End Processing Time (per job)", pooledEndToEnd
+        );
+        std::cout << "========================================\n\n";
+    } else if (config.latency) {
+        std::cout << "Latency Statistics: pooled section omitted (more than "
+                  << kMaxPooledSamples
+                  << " samples would be retained); see per-run lines above.\n\n";
     }
 
     std::cout << "  Benchmark Status: " << (allOk ? "PASS" : "FAIL")

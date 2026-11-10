@@ -20,6 +20,7 @@ set(JOBQ_CORE_SOURCES
     src/storage/FileJobStorage.cpp
     src/metrics/JobMetrics.cpp
     src/metrics/JobMetricsJson.cpp
+    src/metrics/LatencyStatistics.cpp
 )
 
 add_executable(jobq
@@ -475,6 +476,22 @@ if(BUILD_TESTING)
     add_test(
         NAME jobq_fault_injection
         COMMAND jobq_fault_injection_test
+    )
+
+    add_executable(jobq_latency_statistics_test
+        tests/job_latency_statistics_test.cpp
+        ${JOBQ_CORE_SOURCES}
+    )
+
+    target_include_directories(jobq_latency_statistics_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+    )
+
+    target_link_libraries(jobq_latency_statistics_test PRIVATE Threads::Threads)
+
+    add_test(
+        NAME jobq_latency_statistics
+        COMMAND jobq_latency_statistics_test
     )
 
 endif()

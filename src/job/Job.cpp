@@ -294,4 +294,21 @@ void Job::markCancelled() {
     );
 }
 
+void Job::setQueueReadyTime(
+    std::chrono::steady_clock::time_point readyAt
+) noexcept {
+    queueReadyTicks_.store(
+        readyAt.time_since_epoch().count(),
+        std::memory_order_relaxed
+    );
+}
+
+std::chrono::steady_clock::time_point Job::queueReadyTime() const noexcept {
+    return std::chrono::steady_clock::time_point(
+        std::chrono::steady_clock::duration(
+            queueReadyTicks_.load(std::memory_order_relaxed)
+        )
+    );
+}
+
 }

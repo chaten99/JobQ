@@ -16,6 +16,8 @@ bool JobQueue::push(std::shared_ptr<Job> job) {
             return false;
         }
 
+        job->setQueueReadyTime(Clock::now());
+
         jobs_.push(
             QueueEntry{
                 std::move(job),
@@ -40,6 +42,8 @@ bool JobQueue::pushRetry(
         std::lock_guard<std::mutex> lock(mutex_);
 
         if (delay <= std::chrono::milliseconds::zero()) {
+            job->setQueueReadyTime(Clock::now());
+
             jobs_.push(
                 QueueEntry{
                     std::move(job),
@@ -67,6 +71,10 @@ void JobQueue::promoteDueRetriesLocked() {
 
     while (!delayedRetries_.empty() &&
            delayedRetries_.top().readyAt <= now) {
+        delayedRetries_.top().job->setQueueReadyTime(
+            delayedRetries_.top().readyAt
+        );
+
         jobs_.push(
             QueueEntry{
                 delayedRetries_.top().job,

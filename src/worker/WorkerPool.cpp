@@ -29,6 +29,20 @@ WorkerPool::WorkerPool(
     initializeWorkers(workerCount);
 }
 
+WorkerPool::WorkerPool(
+    JobQueue& queue,
+    JobExecutor& executor,
+    std::size_t workerCount,
+    JobMetrics& metrics,
+    ExecutionObserver& observer
+)
+    : queue_(queue),
+      executor_(executor),
+      metrics_(&metrics),
+      observer_(&observer) {
+    initializeWorkers(workerCount);
+}
+
 void WorkerPool::initializeWorkers(std::size_t workerCount) {
     if (workerCount == 0) {
         throw std::invalid_argument(
@@ -44,7 +58,8 @@ void WorkerPool::initializeWorkers(std::size_t workerCount) {
                 i + 1,
                 queue_,
                 executor_,
-                metrics_
+                metrics_,
+                observer_
             )
         );
     }

@@ -1,6 +1,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
@@ -91,6 +92,12 @@ public:
 
     void markCancelled();
 
+    void setQueueReadyTime(
+        std::chrono::steady_clock::time_point readyAt
+    ) noexcept;
+
+    std::chrono::steady_clock::time_point queueReadyTime() const noexcept;
+
 private:
     void transitionTo(
         JobStatus expectedCurrent,
@@ -110,6 +117,8 @@ private:
     JobStatus status_;
 
     JobStateObserver stateObserver_;
+
+    std::atomic<std::chrono::steady_clock::rep> queueReadyTicks_{0};
 };
 
 }
