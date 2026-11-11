@@ -13,6 +13,7 @@
 
 namespace jobq {
 
+class ExecutionObserver;
 class JobMetrics;
 
 class WorkerPool {
@@ -28,6 +29,14 @@ public:
         JobExecutor& executor,
         std::size_t workerCount,
         JobMetrics& metrics
+    );
+
+    WorkerPool(
+        JobQueue& queue,
+        JobExecutor& executor,
+        std::size_t workerCount,
+        JobMetrics& metrics,
+        ExecutionObserver& observer
     );
 
     ~WorkerPool();
@@ -53,6 +62,7 @@ private:
     JobQueue& queue_;
     JobExecutor& executor_;
     JobMetrics* metrics_{nullptr};
+    ExecutionObserver* observer_{nullptr};
 
     std::vector<std::unique_ptr<Worker>> workers_;
 

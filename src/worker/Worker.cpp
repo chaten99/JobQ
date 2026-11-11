@@ -6,6 +6,7 @@
 #include <thread>
 #include <iostream>
 #include <syncstream>
+#include "metrics/ExecutionObserver.h"
 #include "metrics/JobMetrics.h"
 
 namespace jobq {
@@ -157,12 +158,14 @@ Worker::Worker(
     std::size_t id,
     JobQueue& queue,
     JobExecutor& executor,
-    JobMetrics* metrics
+    JobMetrics* metrics,
+    ExecutionObserver* observer
 )
     : id_(id),
       queue_(queue),
       executor_(executor),
-      metrics_(metrics) {}
+      metrics_(metrics),
+      observer_(observer) {}
 
 Worker::~Worker() {
     try {
@@ -237,8 +240,10 @@ void Worker::run() {
                 break;
             }
 
+            const auto pickedAt = JobMetrics::Clock::now();
+
             try {
-                processJob(job);
+                processJob(job, pickedAt);
             } catch (const std::exception& exception) {
                 std::osyncstream(std::cerr)
                     << "[Worker " << id_
@@ -258,7 +263,36 @@ void Worker::run() {
     }
 }
 
-void Worker::processJob(const std::shared_ptr<Job>& job) {
+void Worker::notifyObserverSafely(
+    const std::shared_ptr<Job>& job,
+    JobMetrics::Clock::time_point pickedAt,
+    JobMetrics::Clock::time_point finishedAt,
+    JobMetrics::Clock::duration executionTime,
+    bool succeeded
+) noexcept {
+    if (!observer_) {
+        return;
+    }
+
+    try {
+        ExecutionSample sample;
+        sample.jobId = job->getId();
+        sample.workerId = id_;
+        sample.attempt = job->getAttemptsMade();
+        sample.queueWait = pickedAt - job->queueReadyTime();
+        sample.finishedAt = finishedAt;
+        sample.executionDuration = executionTime;
+        sample.succeeded = succeeded;
+
+        observer_->onExecutionFinished(sample);
+    } catch (...) {
+    }
+}
+
+void Worker::processJob(
+    const std::shared_ptr<Job>& job,
+    JobMetrics::Clock::time_point pickedAt
+) {
     bool executionStarted = false;
     JobMetrics::Clock::time_point executionStartedAt{};
 
@@ -284,9 +318,12 @@ void Worker::processJob(const std::shared_ptr<Job>& job) {
 
         job->markCompleted();
 
-        recordExecutionCompletedSafely(
-            metrics_,
-            JobMetrics::Clock::now() - executionStartedAt
+        const auto finishedAt = JobMetrics::Clock::now();
+        const auto executionTime = finishedAt - executionStartedAt;
+
+        recordExecutionCompletedSafely(metrics_, executionTime);
+        notifyObserverSafely(
+            job, pickedAt, finishedAt, executionTime, true
         );
 
         std::osyncstream(std::cout)
@@ -297,18 +334,24 @@ void Worker::processJob(const std::shared_ptr<Job>& job) {
             << " attempt(s)\n";
     } catch (const std::exception& exception) {
         if (executionStarted) {
-            recordExecutionFailedSafely(
-                metrics_,
-                JobMetrics::Clock::now() - executionStartedAt
+            const auto finishedAt = JobMetrics::Clock::now();
+            const auto executionTime = finishedAt - executionStartedAt;
+
+            recordExecutionFailedSafely(metrics_, executionTime);
+            notifyObserverSafely(
+                job, pickedAt, finishedAt, executionTime, false
             );
         }
 
         handleJobFailure(id_, queue_, job, metrics_, exception.what());
     } catch (...) {
         if (executionStarted) {
-            recordExecutionFailedSafely(
-                metrics_,
-                JobMetrics::Clock::now() - executionStartedAt
+            const auto finishedAt = JobMetrics::Clock::now();
+            const auto executionTime = finishedAt - executionStartedAt;
+
+            recordExecutionFailedSafely(metrics_, executionTime);
+            notifyObserverSafely(
+                job, pickedAt, finishedAt, executionTime, false
             );
         }
 

@@ -54,6 +54,7 @@ Welcome to the **JobQ** documentation suite. This index links to the architectur
 ---
 
 ## 9. Testing
+- **[Benchmarking Guide](benchmarking.md):** The configurable throughput benchmark (`jobq_throughput_benchmark`): scenarios, options, methodology and limitations.
 - **[Testing Guide](testing.md):** The 24 CTest suites, the Phase 9 reliability tests and helpers, how to run them, and how to add a new test target.
 - **[Contributing Guide](../CONTRIBUTING.md):** Developer workflow, Git conventions, coding standards, and the PR checklist.
 
