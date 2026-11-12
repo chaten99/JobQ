@@ -494,4 +494,17 @@ if(BUILD_TESTING)
         COMMAND jobq_latency_statistics_test
     )
 
+    add_executable(jobq_worker_scaling_statistics_test
+        tests/worker_scaling_statistics_test.cpp
+    )
+
+    target_include_directories(jobq_worker_scaling_statistics_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks
+    )
+
+    add_test(
+        NAME jobq_worker_scaling_statistics
+        COMMAND jobq_worker_scaling_statistics_test
+    )
+
 endif()

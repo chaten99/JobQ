@@ -46,7 +46,7 @@ JobQ/
 â”‚   â”œâ”€â”€ queue/                  # JobQueue implementation
 â”‚   â”œâ”€â”€ storage/                # FileJobStorage and JobRecord serialization
 â”‚   â””â”€â”€ worker/                 # Worker and WorkerPool implementations
-â”œâ”€â”€ tests/                      # Automated CTest test suites (24 test drivers)
+â”œâ”€â”€ tests/                      # Automated CTest test suites (26 test drivers)
 â””â”€â”€ examples/                   # Stress test and concurrency benchmark programs
 ```
 
@@ -97,7 +97,7 @@ Source implementations directly match their respective header headers:
 
 ## 4. Test Directory (`tests/`)
 
-JobQ contains 24 standalone test drivers, each compiled into its own executable and registered with CMake `add_test()`:
+JobQ contains 26 standalone test drivers, each compiled into its own executable and registered with CMake `add_test()`:
 
 | Test Executable | CTest Name | Focus Area |
 |---|---|---|
@@ -125,12 +125,15 @@ JobQ contains 24 standalone test drivers, each compiled into its own executable 
 | `jobq_queue_reliability_test` | `jobq_queue_reliability` | Concurrent queue behaviour, closure and delayed retries. |
 | `jobq_recovery_hardening_test` | `jobq_recovery_hardening` | Record validation and recovery of every job state. |
 | `jobq_fault_injection_test` | `jobq_fault_injection` | Fault injection and resilience (helpers in `tests/helpers/`). |
+| `jobq_latency_statistics_test` | `jobq_latency_statistics` | Latency statistics, queue-ready timestamps and execution observer accounting. |
+| `jobq_worker_scaling_statistics_test` | `jobq_worker_scaling_statistics` | Worker-scaling calculations and worker-count parsing (uses `benchmarks/ScalingAnalysis.h`). |
 
 ---
 
 ## Benchmarks Directory (`benchmarks/`)
 
 - **`benchmarks/throughput_benchmark.cpp`**: configurable throughput benchmark (CMake target `jobq_throughput_benchmark`, not run by CTest). See [Benchmarking](benchmarking.md).
+- **`benchmarks/ScalingAnalysis.h`**: header-only worker-count parsing, run summaries and speedup/efficiency calculations shared by the benchmark and its unit test.
 
 ---
 

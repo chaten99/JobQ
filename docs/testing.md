@@ -13,7 +13,7 @@ JobQ uses a modular testing philosophy:
 
 ---
 
-## 2. Test Suite Catalog (24 Registered Tests)
+## 2. Test Suite Catalog (26 Registered Tests)
 
 | # | CTest Name | Source File | Description |
 |---|---|---|---|
@@ -41,13 +41,15 @@ JobQ uses a modular testing philosophy:
 | 22 | `jobq_queue_reliability` | `tests/job_queue_reliability_test.cpp` | Concurrent producers/consumers, push versus close, ordering, delayed retries. |
 | 23 | `jobq_recovery_hardening` | `tests/job_recovery_hardening_test.cpp` | Record validation, recovery of every job state, duplicate IDs, next-ID rules, storage failures. |
 | 24 | `jobq_fault_injection` | `tests/fault_injection_test.cpp` | Injected handler, storage, queue and worker failures; corruption; concurrent failure stress; metrics invariants. |
+| 25 | `jobq_latency_statistics` | `tests/job_latency_statistics_test.cpp` | Latency statistics (nearest-rank percentiles, sums, merging), queue-ready timestamps, and per-attempt observer accounting through a real `WorkerPool`. |
+| 26 | `jobq_worker_scaling_statistics` | `tests/worker_scaling_statistics_test.cpp` | Worker-count list parsing and validation, repeated-run summaries, speedup, efficiency, throughput change and baseline handling (pure arithmetic, no timing). |
 
 ---
 
 ## 3. Running Tests
 
 ### Run All Tests
-Execute all 24 test suites with failure output enabled:
+Execute all 26 test suites with failure output enabled:
 
 ```powershell
 ctest --test-dir build --output-on-failure

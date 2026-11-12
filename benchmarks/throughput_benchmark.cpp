@@ -18,6 +18,7 @@
 #include <system_error>
 #include <vector>
 
+#include "ScalingAnalysis.h"
 #include "executor/JobExecutor.h"
 #include "job/Job.h"
 #include "manager/JobManager.h"
@@ -45,6 +46,9 @@ struct Config {
     std::uint64_t runs{3};
     std::uint64_t warmupJobs{1000};
     bool latency{true};
+    std::vector<std::uint64_t> workerCounts;
+    bool workersGiven{false};
+    bool scalingMode{false};
 };
 
 struct ParseOutcome {
@@ -73,6 +77,10 @@ void printUsage(std::ostream& out) {
         << kMaxJobs << " (default 10000)\n"
         << "  --workers N        Worker threads, 1.." << kMaxWorkers
         << " (default 4)\n"
+        << "  --worker-counts L  Worker-scaling mode: comma-separated list, e.g. 1,2,4,8\n"
+           "                     (each 1.."  << kMaxWorkers << ", no duplicates, at most "
+        << jobq_bench::kMaxWorkerCountEntries << " entries; cannot be\n"
+           "                     combined with --workers)\n"
         << "  --scenario NAME    noop | lightweight | mixed (default noop)\n"
            "  --runs N           Measured runs, 1.."
         << kMaxRuns << " (default 3)\n"
@@ -84,7 +92,9 @@ void printUsage(std::ostream& out) {
            "Options accept both '--name value' and '--name=value'.\n"
            "Example:\n"
            "  jobq_throughput_benchmark --jobs 100000 --workers 4 "
-           "--scenario noop --runs 5 --warmup-jobs 1000\n";
+           "--scenario noop --runs 5 --warmup-jobs 1000\n"
+           "  jobq_throughput_benchmark --jobs 100000 --worker-counts 1,2,4,8 "
+           "--scenario lightweight --runs 5 --warmup-jobs 1000\n";
 }
 
 bool parseUnsigned(
@@ -159,7 +169,7 @@ ParseOutcome parseArguments(int argc, char** argv, Config& config) {
         const bool known =
             name == "--jobs" || name == "--workers" ||
             name == "--scenario" || name == "--runs" ||
-            name == "--warmup-jobs";
+            name == "--warmup-jobs" || name == "--worker-counts";
 
         if (!known) {
             outcome.ok = false;
@@ -178,6 +188,27 @@ ParseOutcome parseArguments(int argc, char** argv, Config& config) {
 
         bool parsed = true;
 
+        if (name == "--worker-counts") {
+            if (config.scalingMode) {
+                outcome.ok = false;
+                outcome.error = "Option --worker-counts was specified more than once";
+                return outcome;
+            }
+
+            const auto list =
+                jobq_bench::parseWorkerCounts(value, kMaxWorkers);
+
+            if (!list.ok) {
+                outcome.ok = false;
+                outcome.error = list.error;
+                return outcome;
+            }
+
+            config.workerCounts = list.counts;
+            config.scalingMode = true;
+            continue;
+        }
+
         if (name == "--jobs") {
             parsed = parseUnsigned(
                 value, 1, kMaxJobs, name, config.jobs, outcome.error
@@ -186,6 +217,7 @@ ParseOutcome parseArguments(int argc, char** argv, Config& config) {
             parsed = parseUnsigned(
                 value, 1, kMaxWorkers, name, config.workers, outcome.error
             );
+            config.workersGiven = true;
         } else if (name == "--runs") {
             parsed = parseUnsigned(
                 value, 1, kMaxRuns, name, config.runs, outcome.error
@@ -213,6 +245,14 @@ ParseOutcome parseArguments(int argc, char** argv, Config& config) {
             outcome.ok = false;
             return outcome;
         }
+    }
+
+    if (config.scalingMode && config.workersGiven) {
+        outcome.ok = false;
+        outcome.error =
+            "Options --workers and --worker-counts cannot be combined; "
+            "use --workers N for a single configuration or "
+            "--worker-counts LIST for a scaling comparison";
     }
 
     return outcome;
@@ -693,17 +733,6 @@ RunResult runOnce(
     return result;
 }
 
-double median(std::vector<double> values) {
-    std::sort(values.begin(), values.end());
-    const std::size_t count = values.size();
-
-    if (count % 2 == 1) {
-        return values[count / 2];
-    }
-
-    return (values[count / 2 - 1] + values[count / 2]) / 2.0;
-}
-
 std::string formatNanoseconds(double nanoseconds) {
     std::ostringstream text;
     text << std::fixed;
@@ -818,6 +847,407 @@ void printRun(
     out << '\n';
 }
 
+struct ConfigResult {
+    std::uint64_t workers{0};
+    bool ok{false};
+    std::string error;
+
+    std::size_t runsRequested{0};
+    std::size_t runsSucceeded{0};
+
+    std::vector<double> throughputs;
+    std::optional<jobq_bench::RunSummary> summary;
+
+    std::uint64_t accepted{0};
+    std::uint64_t completed{0};
+    std::uint64_t failed{0};
+    std::uint64_t started{0};
+    std::uint64_t finished{0};
+
+    double metricsAverageUs{0.0};
+
+    bool latencyPooled{false};
+    std::size_t queueWaitSamples{0};
+    std::size_t executionSamples{0};
+    std::optional<jobq::LatencySummary> queueWait;
+    std::optional<jobq::LatencySummary> execution;
+};
+
+std::string formatRatio(const std::optional<double>& value, const char* suffix) {
+    if (!value) {
+        return "n/a";
+    }
+
+    std::ostringstream text;
+    text << std::fixed << std::setprecision(2) << *value << suffix;
+    return text.str();
+}
+
+std::string formatChange(
+    const std::optional<jobq_bench::ThroughputChange>& change
+) {
+    if (!change) {
+        return "n/a";
+    }
+
+    std::ostringstream text;
+    text << std::fixed << std::setprecision(2) << std::showpos
+         << change->absolute << " jobs/sec";
+
+    if (change->percent) {
+        text << " (" << *change->percent << "%)";
+    } else {
+        text << " (percentage n/a)";
+    }
+
+    return text.str();
+}
+
+std::vector<jobq_bench::ScalingInput> toScalingInputs(
+    const std::vector<ConfigResult>& results
+) {
+    std::vector<jobq_bench::ScalingInput> inputs;
+
+    for (const auto& result : results) {
+        jobq_bench::ScalingInput input;
+        input.workers = result.workers;
+        input.ok = result.ok;
+        input.throughput = result.summary;
+        inputs.push_back(input);
+    }
+
+    return inputs;
+}
+
+ConfigResult runWorkerCount(
+    const Config& config,
+    std::uint64_t workers
+) {
+    ConfigResult result;
+    result.workers = workers;
+    result.runsRequested = static_cast<std::size_t>(config.runs);
+
+    std::cout << "Workers: " << workers << "\n";
+
+    if (config.warmupJobs > 0) {
+        const auto warmup =
+            runOnce(config.scenario, config.warmupJobs, workers, config.latency);
+
+        if (!warmup.ok) {
+            result.error = "warmup failed: " + warmup.error;
+            std::cout << "  Warmup FAILED: " << warmup.error << "\n\n";
+            return result;
+        }
+    }
+
+    const bool pool =
+        config.latency && config.jobs * config.runs <= kMaxPooledSamples;
+    jobq::LatencySamples pooledWait;
+    jobq::LatencySamples pooledExecution;
+    std::vector<double> metricsAverages;
+
+    for (std::uint64_t run = 1; run <= config.runs; ++run) {
+        const auto outcome =
+            runOnce(config.scenario, config.jobs, workers, config.latency);
+
+        if (!outcome.ok) {
+            result.error = "run " + std::to_string(run) + " failed: " +
+                           outcome.error;
+            std::cout << "  Run " << run << ": FAILED - " << outcome.error
+                      << "\n\n";
+            return result;
+        }
+
+        std::cout << "  Run " << run << ": accepted " << outcome.accepted
+                  << ", completed " << outcome.completed << ", failed "
+                  << outcome.failed << ", started " << outcome.started
+                  << ", finished " << outcome.finished << std::fixed
+                  << std::setprecision(3) << ", duration " << outcome.seconds
+                  << " s" << std::setprecision(2) << ", throughput "
+                  << outcome.throughput << " jobs/sec\n";
+
+        result.throughputs.push_back(outcome.throughput);
+        metricsAverages.push_back(outcome.metricsAverageUs);
+        ++result.runsSucceeded;
+
+        result.accepted = outcome.accepted;
+        result.completed = outcome.completed;
+        result.failed = outcome.failed;
+        result.started = outcome.started;
+        result.finished = outcome.finished;
+
+        if (pool) {
+            pooledWait.merge(outcome.queueWait);
+            pooledExecution.merge(outcome.executionSuccess);
+            pooledExecution.merge(outcome.executionFailure);
+        }
+    }
+
+    result.summary = jobq_bench::summarizeThroughputs(result.throughputs);
+
+    if (!result.summary) {
+        result.error = "throughput samples are not valid";
+        return result;
+    }
+
+    result.metricsAverageUs =
+        std::accumulate(metricsAverages.begin(), metricsAverages.end(), 0.0) /
+        static_cast<double>(metricsAverages.size());
+
+    if (pool) {
+        result.latencyPooled = true;
+        result.queueWaitSamples = pooledWait.count();
+        result.executionSamples = pooledExecution.count();
+        result.queueWait = pooledWait.summarize();
+        result.execution = pooledExecution.summarize();
+    }
+
+    result.ok = true;
+    return result;
+}
+
+void printConfigSummary(
+    const ConfigResult& result,
+    const jobq_bench::ScalingRow& row,
+    bool baselineAvailable,
+    const Config& config
+) {
+    std::cout << std::fixed << std::setprecision(2);
+
+    if (!result.ok) {
+        std::cout << "  Configuration FAILED: " << result.error << "\n\n";
+        return;
+    }
+
+    std::cout << "  Runs Succeeded:       " << result.runsSucceeded << " of "
+              << result.runsRequested << '\n'
+              << "  Completed Jobs:       " << result.completed
+              << " per run (failed " << result.failed << ")\n"
+              << "  Min Throughput:       " << result.summary->minimum
+              << " jobs/sec\n"
+              << "  Max Throughput:       " << result.summary->maximum
+              << " jobs/sec\n"
+              << "  Mean Throughput:      " << result.summary->mean
+              << " jobs/sec\n"
+              << "  Median Throughput:    " << result.summary->median
+              << " jobs/sec\n"
+              << "  Avg Exec (JobMetrics):" << ' '
+              << formatNanoseconds(result.metricsAverageUs * 1000.0) << '\n';
+
+    if (config.latency && result.latencyPooled) {
+        const auto line = [](const char* label,
+                             const std::optional<jobq::LatencySummary>& value,
+                             std::size_t samples) {
+            std::cout << "  " << std::left << std::setw(22) << label
+                      << std::right << "n=" << samples;
+
+            if (!value) {
+                std::cout << "  (no samples)\n";
+                return;
+            }
+
+            std::cout << "  avg " << formatNanoseconds(value->averageNanoseconds)
+                      << "  p50 " << formatDuration(value->p50)
+                      << "  p95 " << formatDuration(value->p95)
+                      << "  p99 " << formatDuration(value->p99) << '\n';
+        };
+
+        line("Queue Wait:", result.queueWait, result.queueWaitSamples);
+        line("Execution Duration:", result.execution, result.executionSamples);
+    }
+
+    if (baselineAvailable) {
+        std::cout << "  Speedup:              " << formatRatio(row.speedup, "x")
+                  << '\n'
+                  << "  Scaling Efficiency:   "
+                  << formatRatio(row.efficiencyPercent, "%") << '\n'
+                  << "  Throughput Change:    " << formatChange(row.change)
+                  << '\n';
+    } else {
+        std::cout << "  Speedup:              n/a (no 1-worker baseline)\n"
+                  << "  Scaling Efficiency:   n/a (no 1-worker baseline)\n";
+    }
+
+    std::cout << '\n';
+}
+
+bool runScalingBenchmark(const Config& config) {
+    std::cout << "========== JobQ Worker Scaling Benchmark ==========\n\n"
+              << "Workload Configuration\n"
+              << "  Scenario:             " << scenarioName(config.scenario)
+              << '\n'
+              << "  Requested Jobs:       " << config.jobs << '\n'
+              << "  Worker Counts:        ";
+
+    for (std::size_t i = 0; i < config.workerCounts.size(); ++i) {
+        std::cout << (i ? "," : "") << config.workerCounts[i];
+    }
+
+    std::cout << '\n'
+              << "  Runs Per Count:       " << config.runs << '\n'
+              << "  Warmup Jobs:          " << config.warmupJobs << '\n'
+              << "  Latency Collection:   "
+              << (config.latency ? "enabled" : "disabled (--no-latency)")
+              << '\n'
+              << "  Per-job logging:      suppressed during runs\n"
+              << "  Execution Order:      sequential, ascending worker count\n\n"
+              << "Worker Scaling Results\n\n"
+              << std::flush;
+
+    std::vector<ConfigResult> results;
+
+    for (const auto workers : config.workerCounts) {
+        auto result = runWorkerCount(config, workers);
+        results.push_back(std::move(result));
+
+        const auto analysis =
+            jobq_bench::analyzeScaling(toScalingInputs(results));
+
+        printConfigSummary(
+            results.back(),
+            analysis.rows.back(),
+            analysis.baselineAvailable,
+            config
+        );
+    }
+
+    const auto inputs = toScalingInputs(results);
+    const auto analysis = jobq_bench::analyzeScaling(inputs);
+
+    bool allOk = true;
+    for (const auto& result : results) {
+        allOk = allOk && result.ok;
+    }
+
+    std::cout << "Scaling Comparison (speedup uses median throughput; "
+                 "baseline = 1 worker)\n\n"
+              << std::left << std::setw(9) << "Workers" << std::right
+              << std::setw(15) << "Median jobs/s" << std::setw(15)
+              << "Mean jobs/s" << std::setw(10) << "Speedup"
+              << std::setw(13) << "Efficiency" << "  Change vs 1 worker\n";
+
+    for (std::size_t i = 0; i < results.size(); ++i) {
+        const auto& result = results[i];
+        const auto& row = analysis.rows[i];
+
+        std::cout << std::left << std::setw(9) << result.workers << std::right;
+
+        if (!result.ok) {
+            std::cout << "  FAILED (" << result.error << ")\n";
+            continue;
+        }
+
+        std::cout << std::fixed << std::setprecision(2) << std::setw(15)
+                  << result.summary->median << std::setw(15)
+                  << result.summary->mean << std::setw(10)
+                  << formatRatio(row.speedup, "x") << std::setw(13)
+                  << formatRatio(row.efficiencyPercent, "%") << "  "
+                  << (analysis.baselineAvailable ? formatChange(row.change)
+                                                 : std::string("n/a"))
+                  << '\n';
+    }
+
+    std::cout << '\n';
+
+    if (config.latency) {
+        std::cout << "Latency Comparison (pooled over successful runs; "
+                     "nearest-rank percentiles)\n\n"
+                  << std::left << std::setw(9) << "Workers" << std::right
+                  << std::setw(40) << "Queue wait avg / p50 / p95 / p99"
+                  << std::setw(44) << "Execution avg / p50 / p95 / p99"
+                  << '\n';
+
+        const auto cell = [](const std::optional<jobq::LatencySummary>& v) {
+            if (!v) {
+                return std::string("n/a");
+            }
+            return formatNanoseconds(v->averageNanoseconds) + " / " +
+                   formatDuration(v->p50) + " / " + formatDuration(v->p95) +
+                   " / " + formatDuration(v->p99);
+        };
+
+        for (const auto& result : results) {
+            std::cout << std::left << std::setw(9) << result.workers
+                      << std::right;
+
+            if (!result.ok || !result.latencyPooled) {
+                std::cout << "  n/a\n";
+                continue;
+            }
+
+            std::cout << std::setw(40) << cell(result.queueWait)
+                      << std::setw(44) << cell(result.execution) << '\n';
+        }
+
+        std::cout << '\n';
+    }
+
+    std::cout << "Summary\n\n";
+
+    if (!analysis.baselineAvailable) {
+        std::cout << "  Baseline: " << analysis.baselineNote << ".\n";
+    }
+
+    if (analysis.bestMedianIndex) {
+        std::cout << "  Best median throughput:      "
+                  << results[*analysis.bestMedianIndex].workers
+                  << " worker(s) at " << std::fixed << std::setprecision(2)
+                  << results[*analysis.bestMedianIndex].summary->median
+                  << " jobs/sec\n";
+    }
+
+    if (analysis.bestMaximumIndex) {
+        std::cout << "  Best single-run throughput:  "
+                  << results[*analysis.bestMaximumIndex].workers
+                  << " worker(s) at " << std::fixed << std::setprecision(2)
+                  << results[*analysis.bestMaximumIndex].summary->maximum
+                  << " jobs/sec\n";
+    }
+
+    if (analysis.baselineAvailable) {
+        std::cout << "  Additional workers improved median throughput over 1 "
+                     "worker: "
+                  << (analysis.additionalWorkersImproved ? "yes" : "no")
+                  << '\n';
+    }
+
+    if (analysis.decreasedAt.empty()) {
+        std::cout << "  Throughput decreases between successive counts: none\n";
+    } else {
+        for (const auto index : analysis.decreasedAt) {
+            std::cout << "  Throughput decreased at " << results[index].workers
+                      << " worker(s) compared with the previous successful "
+                         "configuration\n";
+        }
+    }
+
+    if (analysis.baselineAvailable) {
+        if (analysis.efficiencyDeclinedAt.empty()) {
+            std::cout << "  Scaling efficiency did not decline between "
+                         "successive counts\n";
+        } else {
+            std::cout << "  Scaling efficiency declined (diminishing returns) "
+                         "at:";
+            for (const auto index : analysis.efficiencyDeclinedAt) {
+                std::cout << ' ' << results[index].workers;
+            }
+            std::cout << " worker(s)\n";
+        }
+    }
+
+    for (const auto& result : results) {
+        if (!result.ok) {
+            std::cout << "  FAILED configuration: " << result.workers
+                      << " worker(s) - " << result.error << '\n';
+        }
+    }
+
+    std::cout << "\n  Benchmark Status: " << (allOk ? "PASS" : "FAIL")
+              << "\n\n====================================================\n";
+
+    return allOk;
+}
+
 }
 
 int main(int argc, char** argv) {
@@ -833,6 +1263,10 @@ int main(int argc, char** argv) {
         std::cerr << "Error: " << outcome.error << "\n\n";
         printUsage(std::cerr);
         return 2;
+    }
+
+    if (config.scalingMode) {
+        return runScalingBenchmark(config) ? 0 : 1;
     }
 
     std::cout << "========== JobQ Throughput Benchmark ==========\n\n"
@@ -909,22 +1343,20 @@ int main(int argc, char** argv) {
 
     std::cout << "Performance Summary\n\n";
 
-    if (!throughputs.empty()) {
-        const double minimum =
-            *std::min_element(throughputs.begin(), throughputs.end());
-        const double maximum =
-            *std::max_element(throughputs.begin(), throughputs.end());
-        const double mean =
-            std::accumulate(throughputs.begin(), throughputs.end(), 0.0) /
-            static_cast<double>(throughputs.size());
+    const auto throughputSummary =
+        jobq_bench::summarizeThroughputs(throughputs);
 
+    if (throughputSummary) {
         std::cout << std::fixed << std::setprecision(2)
-                  << "  Successful Runs:      " << throughputs.size()
+                  << "  Successful Runs:      " << throughputSummary->count
                   << " of " << config.runs << '\n'
-                  << "  Minimum Throughput:   " << minimum << " jobs/sec\n"
-                  << "  Maximum Throughput:   " << maximum << " jobs/sec\n"
-                  << "  Mean Throughput:      " << mean << " jobs/sec\n"
-                  << "  Median Throughput:    " << median(throughputs)
+                  << "  Minimum Throughput:   " << throughputSummary->minimum
+                  << " jobs/sec\n"
+                  << "  Maximum Throughput:   " << throughputSummary->maximum
+                  << " jobs/sec\n"
+                  << "  Mean Throughput:      " << throughputSummary->mean
+                  << " jobs/sec\n"
+                  << "  Median Throughput:    " << throughputSummary->median
                   << " jobs/sec\n\n";
     } else {
         std::cout << "  No successful runs; no throughput reported.\n\n";

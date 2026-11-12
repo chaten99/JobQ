@@ -8,7 +8,8 @@
 
 - Provide a reproducible way to compare worker counts, workloads and future changes on the same machine.
 - Verify correctness while measuring: a run only produces a throughput number if every accepted job completed exactly once.
-- Latency percentiles, worker-scaling studies, queue stress and contention analysis are separate future work and are not part of this tool.
+- Queue-wait and execution latency statistics (section 10) and worker-scaling comparisons (section 11) are built into the same tool.
+- Queue stress testing, contention analysis and performance optimization are separate future work and are not part of this tool.
 
 ---
 
@@ -54,6 +55,8 @@ All work is deterministic (no random numbers). Each handler adds its result to a
 --scenario NAME   noop | lightweight | mixed                 (default noop)
 --runs N          Measured runs, 1..100                      (default 3)
 --warmup-jobs N   Jobs in the unmeasured warmup, 0..2000000  (default 1000; 0 disables)
+--no-latency      Disable latency collection (throughput only)
+--worker-counts L Worker-scaling mode, e.g. 1,2,4,8,16 (excludes --workers)
 --help            Show usage
 ```
 
@@ -79,7 +82,7 @@ Smoke tests:
 .\build\jobq_throughput_benchmark.exe --jobs 1000 --workers 2 --scenario mixed --runs 2 --warmup-jobs 100
 ```
 
-The benchmark is **not** registered with CTest, so `ctest` never runs it.
+The benchmark is **not** registered with CTest, so `ctest` never runs it. The pure calculations behind the scaling mode (worker-count parsing, run summaries, speedup and efficiency) live in `benchmarks/ScalingAnalysis.h` and are covered by the CTest target `jobq_worker_scaling_statistics`; latency statistics are covered by `jobq_latency_statistics`. Neither test measures performance.
 
 ---
 
@@ -158,7 +161,94 @@ Performance Summary
 
 ---
 
-## 10. Measurement Limitations
+## 10. Latency Measurement
+
+Unless `--no-latency` is given, every run also collects per-attempt latency samples. These are benchmark statistics; the existing `JobMetrics` counters keep their meaning.
+
+### Definitions and timestamp boundaries
+
+| Metric | Start | End |
+|---|---|---|
+| **Queue waiting time** | The moment the job became available in the ready queue (`JobQueue` stamps `Job::queueReadyTime()` under its mutex when the job enters the ready heap) | The moment `waitAndPop()` returned to the worker, before `markRunning()` |
+| **Execution duration** | Immediately after `markRunning()` succeeded | Immediately after `markCompleted()` (success) or at the catch block (failure) |
+| **End-to-end processing time** | Just before `JobManager::submit()` is called (benchmark side) | End of the successful attempt |
+
+- Queue waiting time is measured at the real queue boundary, not from the start of the benchmark or from a batch timestamp. It excludes job creation and the `markRunning()` transition.
+- A retry that waits out its backoff delay is not counted as queue wait: a delayed retry is stamped with its eligibility time when it is promoted into the ready heap, and a zero-delay retry is stamped when it is pushed. (The throughput benchmarks configure no retries, so this only matters for library users of `ExecutionObserver`.)
+- The execution duration is the very same value that is passed to `JobMetrics::recordExecutionCompleted/Failed`; it is measured once. It therefore includes the handler, the per-job log line (silenced here) and the `markCompleted()` lifecycle transition, but not `markRunning()`. The sum of all execution samples must equal `JobMetrics` total execution time exactly; the benchmark verifies this on every run.
+- End-to-end time starts at the submit call, so it includes job creation and submission. Because no retries are configured, every successful attempt is the job's final completion.
+- Each execution attempt is its own sample. Successful and failed attempts are stored separately. A failed attempt contributes a queue-wait and a failed-execution sample.
+
+### Production hooks used
+
+A small, general-purpose instrumentation was added to the engine: `Job::queueReadyTime()` (stamped by `JobQueue`) and an optional `ExecutionObserver` that `Worker` calls once per finished attempt. It is enabled only through a `WorkerPool` constructor overload that takes an observer; existing constructors are unchanged and behave as before.
+
+### Statistics
+
+- Samples are nanoseconds (`LatencySamples`); the console shows human-readable units.
+- Average = sum of samples / number of samples (the sum is kept exact beyond 64 bits).
+- Percentiles use the **nearest-rank** method on the sorted samples: `rank = ceil(p/100 * n)` (integer arithmetic), value = the sample at that rank. For an even number of samples **p50 is the lower middle sample**; this differs from the arithmetic median (mean of the two middle values) that the throughput summary uses for per-run throughput.
+- An empty sample set has no statistics and is printed as "no samples", never as zeros.
+
+### Collection and overhead
+
+Each worker writes only to its own cache-line-aligned slot (indexed by worker id), so there is no lock or shared counter on the hot path. Slots are merged after the pool has been stopped and all workers joined, then validated: queue-wait samples = started executions, successful + failed execution samples = completed + failed executions, end-to-end samples = completed jobs, no negative values, and sample sums = `JobMetrics` totals.
+
+Overhead is not free: the queue takes one extra clock read per enqueue (always on), and with latency enabled there are extra clock reads per attempt and per submission plus vector appends. For micro-jobs this is a measurable fraction of the per-job cost. Use `--no-latency` for throughput numbers with the least instrumentation, and compare runs only when they use the same setting.
+
+### Output
+
+Each run prints one compact line per category (`n=`, average, p50, p95, p99). After all runs a "Latency Statistics" section pools the samples of all successful measured runs (omitted above 5,000,000 retained samples) with samples, minimum, maximum, average, P50, P95 and P99 for queue waiting time, successful and failed execution duration, and end-to-end time.
+
+---
+
+## 11. Worker Scaling Benchmarks
+
+`--worker-counts LIST` switches the same executable into a scaling comparison: the identical workload is run for each worker count and the results are compared.
+
+```powershell
+.\build\jobq_throughput_benchmark.exe --jobs 100000 --worker-counts 1,2,4,8,16 --scenario lightweight --runs 5 --warmup-jobs 1000
+```
+
+### Worker-count list
+
+- Comma-separated positive integers, each 1..256, at most 32 entries. Whitespace, signs, decimals, empty entries (`1,,2`, trailing commas), overflow and duplicates are rejected with a message and exit code 2.
+- The list is sorted ascending; configurations execute **sequentially** in that order, never concurrently.
+- `--worker-counts` cannot be combined with `--workers` (the run is rejected, nothing is silently ignored) and cannot be given twice. Without `--worker-counts` the single-configuration behaviour described above is unchanged.
+
+### Methodology
+
+For each worker count: an independent warmup runtime (`--warmup-jobs`), then `--runs` measured runs, each with a fresh queue, metrics, manager, executor and pool. Jobs, job types, payloads, handlers and (absent) retry configuration are identical for every count; only the worker count changes. Timing boundaries, verification, logging suppression and latency collection are exactly those of the single-configuration benchmark. A failed warmup or run marks that configuration FAILED (it is shown, excluded from comparisons and fails the benchmark) but the remaining counts still execute.
+
+### Calculations
+
+All relative values use the **median throughput** of each configuration (the arithmetic median of its per-run throughputs) and the one-worker configuration as baseline.
+
+```text
+Speedup (N)            = median throughput (N workers) / median throughput (1 worker)
+Scaling efficiency (N) = Speedup (N) / N * 100            (not clamped; may exceed 100%)
+Throughput change (N)  = median(N) - median(1)   [jobs/sec], and as a percentage of median(1)
+```
+
+- If no successful 1-worker configuration with positive throughput exists, speedup, efficiency and change are reported as unavailable; nothing is fabricated.
+- Per configuration the report shows min, max, mean and median throughput, completed jobs per run, the JobMetrics average execution time, and (pooled over its successful runs) queue-wait and execution-duration statistics with the percentiles described above.
+- "Best median throughput" and "best single-run throughput" name the configuration with the highest value; the largest worker count is not assumed to be best.
+- Throughput is flagged as **decreased** when a configuration's median is below the previous successful configuration's median. Scaling efficiency is flagged as **declined** when it is lower than at the previous successful configuration; this is how diminishing returns are reported (no fixed threshold is used).
+
+### Interpreting results
+
+Adding workers does not guarantee linear scaling, and for small jobs it can reduce throughput. The producer is a single thread and all workers share one queue mutex and condition variable, so when a job's work is only microseconds the cost of submitting, locking, waking workers and recording metrics dominates; more workers then mainly add contention and context switching. Expect results to depend on CPU cores, OS scheduling, synchronization cost, queue contention, handler workload, system load and compiler optimization settings. Queue waiting time and throughput must be read together: with one worker the queue can build a backlog (large queue wait), while many workers drain it at the cost of per-job overhead; lower queue wait does not imply higher throughput.
+
+### Limitations specific to scaling runs
+
+- All configurations run in one process. Run-to-run noise is considerable (single runs have differed by tens of percent) and later runs in a long-lived process have been observed to slow down on the development machine; cross-check surprising results by running each count in its own invocation (`--worker-counts 4`, a one-entry list) and by comparing medians over several runs.
+- Worker counts above the number of hardware threads measure oversubscription, not parallel speedup.
+- The built-in scenarios have very small per-job cost and a single producer, so they characterize engine overhead and contention rather than a CPU-bound workload that would scale well.
+- Pooled latency percentiles combine all successful runs of a configuration; they are not per-run values.
+
+---
+
+## 12. Measurement Limitations
 
 - Results depend on CPU model, operating system, compiler and version, **optimization flags** (the default CMake configuration here is `Debug` without `-O`), worker count, workload, system load and thermal state. Do not compare numbers across machines or builds.
 - The `noop` and `lightweight` jobs are tiny, so results mostly reflect queue and synchronization overhead; they say little about real handlers.
@@ -167,11 +257,11 @@ Performance Summary
 - Every job stays registered in memory until the run ends, hence the 2,000,000-job cap.
 - Short runs (a few milliseconds) are noisy; use at least tens of thousands of jobs.
 - Observation on the development machine: when many measured runs execute inside one process, later runs (around the fifth onward) can be markedly slower than the first ones, while separate processes were stable. The cause was not investigated in this commit. Prefer several short invocations or a small `--runs` value and compare medians.
-- Only throughput is measured: no latency percentiles, queue wait time or contention analysis.
+- Latency statistics are collected with the instrumentation described in section 10; contention analysis (for example lock wait time) is not measured.
 
 ---
 
-## 11. Reproducing a Run
+## 13. Reproducing a Run
 
 1. Use the same build directory configuration (`cmake -S . -B build`; note `CMAKE_BUILD_TYPE` and compiler in `build/CMakeCache.txt`).
 2. Close other heavy applications; keep the machine on mains power.
