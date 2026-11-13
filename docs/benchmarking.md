@@ -9,7 +9,7 @@
 - Provide a reproducible way to compare worker counts, workloads and future changes on the same machine.
 - Verify correctness while measuring: a run only produces a throughput number if every accepted job completed exactly once.
 - Queue-wait and execution latency statistics (section 10) and worker-scaling comparisons (section 11) are built into the same tool.
-- Queue stress testing, contention analysis and performance optimization are separate future work and are not part of this tool.
+- Queue stress testing is provided by a separate executable (section 12). Contention analysis and performance optimization are separate future work and are not part of these tools.
 
 ---
 
@@ -82,7 +82,7 @@ Smoke tests:
 .\build\jobq_throughput_benchmark.exe --jobs 1000 --workers 2 --scenario mixed --runs 2 --warmup-jobs 100
 ```
 
-The benchmark is **not** registered with CTest, so `ctest` never runs it. The pure calculations behind the scaling mode (worker-count parsing, run summaries, speedup and efficiency) live in `benchmarks/ScalingAnalysis.h` and are covered by the CTest target `jobq_worker_scaling_statistics`; latency statistics are covered by `jobq_latency_statistics`. Neither test measures performance.
+The benchmark is **not** registered with CTest, so `ctest` never runs it. The stress benchmark is built as `jobq_queue_stress_benchmark` and its bounded integration test is the CTest target `jobq_queue_stress`. The pure calculations behind the scaling mode (worker-count parsing, run summaries, speedup and efficiency) live in `benchmarks/ScalingAnalysis.h` and are covered by the CTest target `jobq_worker_scaling_statistics`; latency statistics are covered by `jobq_latency_statistics`. Neither test measures performance.
 
 ---
 
@@ -248,7 +248,115 @@ Adding workers does not guarantee linear scaling, and for small jobs it can redu
 
 ---
 
-## 12. Measurement Limitations
+## 12. Queue Stress Testing
+
+`jobq_queue_stress_benchmark` stresses the real engine with several producer threads, several workers and large job counts, and verifies exact job accounting after every run. It is a separate executable (`benchmarks/queue_stress_benchmark.cpp`) and is **not** run by CTest. Its runner (`benchmarks/StressRunner.h`) is also used by the bounded CTest target `jobq_queue_stress` (`tests/job_queue_stress_test.cpp`).
+
+How the three tools differ:
+
+| Tool | Question it answers | Varies | Result |
+|---|---|---|---|
+| `jobq_throughput_benchmark` | How many jobs per second does the engine process? | Scenario, workers | Throughput and latency baseline |
+| `jobq_throughput_benchmark --worker-counts` | How does performance change with the number of workers? | Worker count | Speedup, efficiency, latency comparison |
+| `jobq_queue_stress_benchmark` | Does the queue stay correct (no loss, duplication or inconsistency) under heavy concurrent load? | Producers, workers, volume, failures | PASS/FAIL integrity verdict plus rates |
+
+### Scenarios
+
+| `--scenario` | Behaviour |
+|---|---|
+| `single-producer` | Exactly one producer thread, `--workers` consumers. `--producers` is ignored, and the configuration banner says so. |
+| `concurrent` | `--producers` threads submit simultaneously (released from a start gate) while the workers are already running. |
+| `sustained` | As `concurrent`, plus a monitor thread that samples `JobQueue::size()` about every half millisecond. |
+| `priority` | Deterministic mix by job index: 20% High, 50% Normal, 30% Low. Also reports queue wait per priority. |
+| `variable` | Mixed-cost handlers (the `mixed` workload from the throughput benchmark; the same handler code is shared through `benchmarks/BenchmarkCommon.h`). |
+| `failure` | Deterministic failures and retries, by job index modulo 10: 70% succeed, 20% fail on the first attempt and succeed on the retry, 10% always fail (1 retry allowed, so 2 attempts, then `Failed`). Retry backoff is 1 ms. |
+| `large` | Runs the `concurrent` workload over 10,000, 50,000, 100,000 and 250,000 jobs (the sizes up to `--jobs`; `--jobs` itself is appended when it is not one of them) and prints a per-size summary. |
+
+`--workload noop|lightweight|mixed` selects the handler cost for scenarios that do not fix it (default `noop`). `variable` implies `mixed` and `failure` has its own handlers, so combining them with a conflicting `--workload` is rejected.
+
+### Options
+
+```text
+--jobs N          Total jobs per run across all producers, 1..1000000  (default 40000)
+--producers N     Producer threads, 1..64                              (default 4)
+--workers N       Worker threads, 1..256                               (default 4)
+--scenario NAME   see the table above                                  (default concurrent)
+--runs N          Measured runs, 1..100                                (default 3)
+--warmup-jobs N   Jobs in the unmeasured warmup run, 0..1000000        (default 1000)
+--workload NAME   noop | lightweight | mixed                           (default noop)
+--no-latency      Disable latency collection
+--help
+```
+
+Parsing rules match the throughput benchmark (whole-number validation, overflow rejection, `--name=value`, exit code 2 on invalid arguments). Exit codes: `0` all runs passed, `1` a warmup or measured run failed its integrity checks, `2` invalid arguments, `3` fatal shutdown timeout.
+
+`--jobs` is split across producers (the first `jobs % producers` producers receive one extra job). The 1,000,000-job limit exists because every accepted job stays in the `JobManager` registry and in the benchmark's bookkeeping until the run ends; memory use is not measured by this tool (it cannot be measured portably), so treat that limit as a safety bound, not as a measured guarantee.
+
+### Run lifecycle
+
+1. A fresh `JobQueue`, `JobMetrics`, `JobManager`, `JobExecutor` and `WorkerPool` (sharing the same `JobMetrics`) are built and the pool is started.
+2. Producer threads are created and wait on a start gate. The timer starts, then the gate opens.
+3. Producers call `JobManager::submit()` concurrently; each submission is accepted or rejected (an exception) and counted.
+4. All producers are joined (also on error paths), then `WorkerPool::stop()` closes the queue and drains every accepted job, including retries, and joins the workers. Shutdown is bounded: if it does not finish within `60 s + jobs/5000 s` the benchmark prints a fatal message and exits with code 3 instead of destroying objects that workers may still use.
+5. The timer stops after the workers have been joined; everything after that, including verification, is untimed.
+
+### Accounting and integrity checks
+
+A run is reported FAIL, and produces no throughput, unless all of these hold:
+
+- attempted submissions equal the requested jobs, accepted + rejected = attempted, and rejected = 0 (the queue is never closed during submission);
+- accepted job IDs are unique and form the contiguous range 1..N; the registry holds exactly the accepted jobs and returns the same job object for each ID;
+- every accepted job is in its expected final state (`Completed`, or `Failed` for the permanently failing jobs of the `failure` scenario);
+- each job's handler executed exactly the planned number of times (detects duplicate and missing executions);
+- `JobMetrics`: submitted = accepted; started = finished = planned attempts; failed attempts and scheduled retries equal the deterministic plan;
+- the queue is empty and the pool is stopped;
+- the workload checksum equals the value recomputed from the accepted jobs;
+- latency sample counts and sums match the metrics (as in section 10).
+
+Unique jobs are never confused with execution attempts: the `failure` scenario, for example, reports 100,000 accepted jobs, 130,000 started executions, 40,000 failed attempts, 30,000 scheduled retries, 90,000 completed and 10,000 permanently failed jobs.
+
+### Reported measurements
+
+- Submission statistics: attempted, accepted, rejected, unique IDs, registry entries.
+- Execution statistics: completed jobs, permanently failed jobs, started and finished executions, completed and failed attempts, scheduled retries.
+- Queue statistics: final queue size and emptiness. The `sustained` scenario also shows the maximum **sampled** queue depth and the number of samples. It is a sampled observation, not an exact peak: the engine exposes no peak-depth counter, and none was added.
+- Performance:
+  - **Total duration** = first submission (gate opened) to workers joined.
+  - **Overall throughput** = completed jobs / total duration.
+  - **Producer phase** = start to the last producer finishing; **submission rate** = accepted jobs / producer phase. Producer completion is never used as the end of the workload.
+  - Average execution time from `JobMetrics`, and queue wait and execution duration statistics using the definitions and percentile method of section 10. End-to-end time is not reported here because job IDs are not known before concurrent submission.
+- Across repeated runs: failed run count and minimum, maximum, mean and median throughput of the **successful** runs. Failed runs are counted and shown, never hidden.
+
+### Interpreting failures
+
+The `ERROR:` line lists every violated check. Typical meanings: "duplicate job IDs" or "registry holds N jobs" point at `JobManager`; "executed a wrong number of times" means a lost or duplicated execution; "queue not empty after shutdown" or a count mismatch means accepted work was not drained; a fatal shutdown timeout (exit 3) indicates a blocked worker or deadlock. Re-run with a smaller `--jobs` and a single producer to narrow down the cause. A bounded passing run does not prove correctness for unlimited workloads.
+
+### Commands
+
+```powershell
+.\build\jobq_queue_stress_benchmark.exe --jobs 2000 --producers 2 --workers 2 --scenario single-producer --runs 2 --warmup-jobs 100
+.\build\jobq_queue_stress_benchmark.exe --jobs 100000 --producers 4 --workers 8 --scenario concurrent --runs 3 --warmup-jobs 1000
+.\build\jobq_queue_stress_benchmark.exe --jobs 100000 --producers 4 --workers 8 --scenario failure --runs 3
+.\build\jobq_queue_stress_benchmark.exe --jobs 250000 --producers 4 --workers 8 --scenario large --runs 2
+ctest --test-dir build -R jobq_queue_stress --output-on-failure
+```
+
+### Findings that shaped the implementation
+
+- **Producer-side lock initialization.** Concurrent first use of a freshly created `JobManager` made the MSYS2/MinGW `std::shared_mutex` assert (`pthread_rwlock` lazy-initialization race in winpthreads) when several producers submitted at the same instant, which aborted the process. The registry lock is now a `PrimedSharedMutex`, a `std::shared_mutex` that is locked and unlocked once when constructed, so it is initialized before any concurrent use. A minimal program using only `std::shared_mutex` reproduces the abort, and the same program passes once the mutex is locked once up front. The regression test is "Test H" in `job_queue_stress_test.cpp`.
+- **Priority observation.** In the `priority` scenario, jobs queued earlier with higher priority wait less on average than low-priority jobs. This is reported for information; the stress test asserts strict priority order only where it is deterministic (all jobs queued before a single worker starts) and FIFO order only for a single producer.
+
+### Limitations
+
+- Handlers are tiny, so these workloads mainly measure queue, registry and metrics synchronization.
+- Job state is held in memory only; the benchmark does not use `FileJobStorage`.
+- Peak queue depth and process memory use are not measured accurately and are not reported as such.
+- The completion wait is the shutdown drain itself (`WorkerPool::stop()`), so the producer phase and total duration are measured, but there is no separate "all accepted work finished" timestamp before shutdown.
+- Results depend on hardware, operating system, compiler flags (the default build here is `Debug`), system load and worker/producer counts.
+
+---
+
+## 13. Measurement Limitations
 
 - Results depend on CPU model, operating system, compiler and version, **optimization flags** (the default CMake configuration here is `Debug` without `-O`), worker count, workload, system load and thermal state. Do not compare numbers across machines or builds.
 - The `noop` and `lightweight` jobs are tiny, so results mostly reflect queue and synchronization overhead; they say little about real handlers.
@@ -261,7 +369,7 @@ Adding workers does not guarantee linear scaling, and for small jobs it can redu
 
 ---
 
-## 13. Reproducing a Run
+## 14. Reproducing a Run
 
 1. Use the same build directory configuration (`cmake -S . -B build`; note `CMAKE_BUILD_TYPE` and compiler in `build/CMakeCache.txt`).
 2. Close other heavy applications; keep the machine on mains power.

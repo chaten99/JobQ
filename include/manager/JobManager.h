@@ -17,6 +17,14 @@ namespace jobq {
 
 class JobMetrics;
 
+class PrimedSharedMutex : public std::shared_mutex {
+public:
+    PrimedSharedMutex() {
+        lock();
+        unlock();
+    }
+};
+
 class JobManager {
 public:
     explicit JobManager(JobQueue& queue);
@@ -73,7 +81,7 @@ private:
 
     std::atomic<uint64_t> nextId_{1};
 
-    mutable std::shared_mutex registryMutex_;
+    mutable PrimedSharedMutex registryMutex_;
 
     std::unordered_map<uint64_t, std::shared_ptr<Job>> jobs_;
 };

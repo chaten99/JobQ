@@ -6,7 +6,7 @@ This document outlines the current verified capabilities of JobQ, active develop
 
 ## 1. Verified & Implemented Capabilities (Phases 1-9)
 
-The following capabilities have been fully implemented, integrated, and verified against the 26 automated CTest test suites:
+The following capabilities have been fully implemented, integrated, and verified against the 27 automated CTest test suites:
 
 ### Core Task Model & State Machine
 - [x] Strongly-typed `Job` entity with atomic ID allocation.
@@ -57,7 +57,7 @@ The following capabilities have been fully implemented, integrated, and verified
 Known reliability limits (at-least-once execution, no `fsync`, no cross-process locking, no handler timeouts) are listed in the [Reliability Guide](reliability.md#5-known-limitations).
 
 ### Test Automation
-- [x] 26 automated test suites integrated with CTest.
+- [x] 27 automated test suites integrated with CTest.
 - [x] Concurrency stress tests and deterministic latch-based synchronization proofs.
 
 ---

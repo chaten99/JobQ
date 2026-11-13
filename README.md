@@ -16,7 +16,7 @@ Conceptually inspired by task processing systems like Celery and BullMQ, JobQ br
 - **Crash Recovery:** Startup recovery pipeline reconciling latest job states and automatically re-enqueuing interrupted and pending tasks.
 - **Multi-Command CLI:** Full-featured command-line tool (`jobq_cli`) supporting `submit`, `list`, `status`, `run`, and `metrics` commands.
 - **Metrics & Observability:** Thread-safe execution counters, monotonic latency measurements (`steady_clock`), real-time throughput calculations, and Schema Version 1 structured JSON export.
-- **Comprehensive Testing:** 26 automated test suites integrated with CTest, including multi-threaded concurrency proofs using `std::latch`.
+- **Comprehensive Testing:** 27 automated test suites integrated with CTest, including multi-threaded concurrency proofs using `std::latch`.
 
 ---
 
@@ -85,7 +85,7 @@ cmake --build build
 ```powershell
 ctest --test-dir build --output-on-failure
 ```
-All 26 automated test suites should pass cleanly.
+All 27 automated test suites should pass cleanly.
 
 ---
 
@@ -223,7 +223,7 @@ queue/                  # JobQueue priority queue and delayed retries
 storage/                # FileJobStorage and JobRecord
 worker/                 # Worker thread and WorkerPool
 src/                        # Implementations and main entry points
-tests/                      # 26 standalone automated test drivers
+tests/                      # 27 standalone automated test drivers
 examples/                   # Stress test and concurrency benchmark programs
 ```
 
@@ -248,7 +248,7 @@ Detailed technical documentation is available in the [`docs/`](docs/README.md) d
 | [Metrics & Observability](docs/metrics-and-observability.md) | Counters, monotonic latency timers, throughput, and JSON export. |
 | [C++ API Usage](docs/api-usage.md) | Real C++20 code samples for embedding JobQ. |
 | [Examples & Demos](docs/examples.md) | Running stress tests and in-process runtime benchmarks. |
-| [Testing Guide](docs/testing.md) | Catalog of the 26 CTest test suites and how to add new tests. |
+| [Testing Guide](docs/testing.md) | Catalog of the 27 CTest test suites and how to add new tests. |
 | [Design Decisions](docs/design-decisions.md) | Architectural trade-offs and rationale. |
 | [Project Status & Roadmap](docs/roadmap.md) | Verified capabilities vs. planned future milestones. |
 | [Contributing Guide](CONTRIBUTING.md) | Development standards, coding style, and PR process. |
@@ -262,7 +262,7 @@ Detailed technical documentation is available in the [`docs/`](docs/README.md) d
 - Fully functioning in-process background job processing engine.
 - Single-host file journal persistence and crash recovery.
 - Multi-command CLI and Schema v1 JSON runtime metrics.
-- 26/26 passing automated CTest test suites.
+- 27/27 passing automated CTest test suites.
 
 ### Current Limitations
 - **Single Process / Local Host:** JobQ currently coordinates jobs within a single process. It does not provide distributed queue coordination across multiple independent server processes or network clusters.

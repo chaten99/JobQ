@@ -25,6 +25,10 @@ Practical diagnostics for developers and operators. Every explanation below matc
 - **Cause:** A new target missing `${JOBQ_CORE_SOURCES}` or `Threads::Threads`. Every test target in `CMakeLists.txt` follows that pattern.
 - **Fix:** Copy the registration pattern from an existing target (see [Testing](testing.md#5-adding-a-new-test-target)).
 
+### Process aborts with `std::__shared_mutex_pthread::lock(): Assertion '__ret == 0' failed` (MinGW)
+- **Cause:** a toolchain issue: MSYS2/MinGW `std::shared_mutex` is backed by a winpthreads read-write lock that is initialized lazily on first use, and several threads taking it for the first time at the same instant can fail. A program using only `std::shared_mutex` reproduces it. `JobManager` primes its registry lock at construction to avoid this (`PrimedSharedMutex`).
+- **If you see it in your own code:** lock and unlock the `std::shared_mutex` once before sharing it between threads, or use a toolchain whose winpthreads is fixed.
+
 ### Test binaries exit immediately with `0xc0000139` (Windows)
 - **Cause:** The test process cannot find the MinGW runtime DLLs, typically when `ctest` is launched from a shell whose `PATH` lacks the toolchain `bin` directory.
 - **Fix:** Run from the same shell that built the project (for example PowerShell with the toolchain on `PATH`).

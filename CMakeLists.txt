@@ -56,6 +56,17 @@ target_include_directories(jobq_throughput_benchmark PRIVATE
 
 target_link_libraries(jobq_throughput_benchmark PRIVATE Threads::Threads)
 
+add_executable(jobq_queue_stress_benchmark
+    benchmarks/queue_stress_benchmark.cpp
+    ${JOBQ_CORE_SOURCES}
+)
+
+target_include_directories(jobq_queue_stress_benchmark PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(jobq_queue_stress_benchmark PRIVATE Threads::Threads)
+
 add_executable(jobq_cli
     src/cli/main.cpp
     src/cli/CommandLine.cpp
@@ -505,6 +516,23 @@ if(BUILD_TESTING)
     add_test(
         NAME jobq_worker_scaling_statistics
         COMMAND jobq_worker_scaling_statistics_test
+    )
+
+    add_executable(jobq_queue_stress_test
+        tests/job_queue_stress_test.cpp
+        ${JOBQ_CORE_SOURCES}
+    )
+
+    target_include_directories(jobq_queue_stress_test PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks
+    )
+
+    target_link_libraries(jobq_queue_stress_test PRIVATE Threads::Threads)
+
+    add_test(
+        NAME jobq_queue_stress
+        COMMAND jobq_queue_stress_test
     )
 
 endif()
