@@ -543,6 +543,54 @@ void testEmptySizeConsistency() {
           "size() stays correct while observed concurrently");
 }
 
+// Exercise all ready-heap insertion paths with enough entries to grow and
+// rearrange the heap repeatedly. No wall-clock performance assertion belongs
+// in this correctness test.
+void testMixedInsertionOrdering() {
+    jobq::JobQueue queue;
+    constexpr std::uint64_t count = 3000;
+    std::vector<std::uint64_t> expected;
+    bool accepted = true;
+
+    for (std::uint64_t id = 1; id <= count; ++id) {
+        const auto priority = static_cast<jobq::JobPriority>(id % 3);
+        auto job = makeJob(id, priority);
+        if (id % 2 == 0) {
+            accepted = queue.pushRetry(job, 0ms) && accepted;
+        } else {
+            accepted = queue.push(job) && accepted;
+        }
+    }
+
+    // These enter the ready heap on promotion, after the immediate entries.
+    for (int priority = 0; priority < 3; ++priority) {
+        accepted = queue.pushRetry(
+            makeJob(count + 1 + priority,
+                    static_cast<jobq::JobPriority>(priority)), 1ms
+        ) && accepted;
+    }
+    std::this_thread::sleep_for(10ms);
+    queue.close();
+
+    for (int priority = 2; priority >= 0; --priority) {
+        for (std::uint64_t id = 1; id <= count; ++id) {
+            if (id % 3 == static_cast<std::uint64_t>(priority)) {
+                expected.push_back(id);
+            }
+        }
+        expected.push_back(count + 1 + priority);
+    }
+
+    std::vector<std::uint64_t> actual;
+    while (auto job = queue.waitAndPop()) {
+        actual.push_back(job->getId());
+    }
+    check(accepted, "Mixed insertion paths accept every job");
+    check(actual == expected,
+          "Large mixed heap preserves priority and FIFO through retry promotion");
+    check(queue.empty(), "Closed mixed heap drains without loss or duplication");
+}
+
 }
 
 int main() {
@@ -561,6 +609,7 @@ int main() {
     testImmediateAndDelayed();
     testConcurrentPushAndClose();
     testEmptySizeConsistency();
+    testMixedInsertionOrdering();
 
     std::cout << "\nTests run: " << testsRun << '\n';
     std::cout << "Tests failed: " << testsFailed << '\n';

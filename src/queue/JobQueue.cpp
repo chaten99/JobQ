@@ -19,11 +19,13 @@ bool JobQueue::push(std::shared_ptr<Job> job) {
         }
 
         job->setQueueReadyTime(Clock::now());
+        const auto priority = job->getPriority();
 
         jobs_.push(
             QueueEntry{
                 std::move(job),
-                nextSequence_++
+                nextSequence_++,
+                priority
             }
         );
     }
@@ -45,11 +47,13 @@ bool JobQueue::pushRetry(
 
         if (delay <= std::chrono::milliseconds::zero()) {
             job->setQueueReadyTime(Clock::now());
+            const auto priority = job->getPriority();
 
             jobs_.push(
                 QueueEntry{
                     std::move(job),
-                    nextSequence_++
+                    nextSequence_++,
+                    priority
                 }
             );
         } else {
@@ -80,7 +84,8 @@ void JobQueue::promoteDueRetriesLocked() {
         jobs_.push(
             QueueEntry{
                 delayedRetries_.top().job,
-                nextSequence_
+                nextSequence_,
+                delayedRetries_.top().job->getPriority()
             }
         );
 
