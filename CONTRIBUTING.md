@@ -82,7 +82,7 @@ Before pushing your branch or submitting a Pull Request, verify that:
    cmake --build build
    ```
 
-2. **All 24 CTest test suites pass:**
+2. **All 28 CTest test suites pass:**
    ```powershell
    ctest --test-dir build --output-on-failure
    ```

@@ -9,6 +9,8 @@
 
 namespace jobq {
 
+class ContentionMetrics;
+
 class JobExecutor {
 public:
     using JobHandler = std::function<void(const Job&)>;
@@ -19,11 +21,15 @@ public:
     JobExecutor(const JobExecutor&) = delete;
     JobExecutor& operator=(const JobExecutor&) = delete;
 
+    void setContentionMetrics(ContentionMetrics* metrics) noexcept;
+
     void registerHandler(std::string type, JobHandler handler);
 
     void execute(const Job& job) const;
 
 private:
+    ContentionMetrics* contention_{nullptr};
+
     mutable std::mutex mutex_;
     std::unordered_map<std::string, JobHandler> handlers_;
 };

@@ -6,6 +6,8 @@
 
 namespace jobq {
 
+class ContentionMetrics;
+
 struct JobMetricsSnapshot {
     std::uint64_t submittedJobs{0};
     std::uint64_t startedExecutions{0};
@@ -30,6 +32,8 @@ public:
     JobMetrics(const JobMetrics&) = delete;
     JobMetrics& operator=(const JobMetrics&) = delete;
 
+    void setContentionMetrics(ContentionMetrics* metrics) noexcept;
+
     void recordJobSubmitted();
 
     void recordExecutionStarted();
@@ -44,6 +48,8 @@ public:
 
 private:
     void validateExecutionTime(Clock::duration executionTime) const;
+
+    ContentionMetrics* contention_{nullptr};
 
     mutable std::mutex mutex_;
 

@@ -13,6 +13,8 @@
 
 namespace jobq {
 
+class ContentionMetrics;
+
 class JobQueue {
 public:
     JobQueue() = default;
@@ -20,6 +22,8 @@ public:
 
     JobQueue(const JobQueue&) = delete;
     JobQueue& operator=(const JobQueue&) = delete;
+
+    void setContentionMetrics(ContentionMetrics* metrics) noexcept;
 
     bool push(std::shared_ptr<Job> job);
 
@@ -46,6 +50,8 @@ private:
     struct QueueEntry {
         std::shared_ptr<Job> job;
         uint64_t sequence;
+        // Job priority is immutable; keep comparisons local to the heap entry.
+        JobPriority priority;
     };
 
     struct QueueEntryCompare {
@@ -53,11 +59,8 @@ private:
             const QueueEntry& left,
             const QueueEntry& right
         ) const {
-            const auto leftPriority =
-                static_cast<int>(left.job->getPriority());
-
-            const auto rightPriority =
-                static_cast<int>(right.job->getPriority());
+            const auto leftPriority = static_cast<int>(left.priority);
+            const auto rightPriority = static_cast<int>(right.priority);
 
             if (leftPriority != rightPriority) {
                 return leftPriority < rightPriority;
@@ -102,6 +105,8 @@ private:
 
     mutable std::mutex mutex_;
     std::condition_variable condition_;
+
+    ContentionMetrics* contention_{nullptr};
 
     bool closed_{false};
     uint64_t nextSequence_{0};

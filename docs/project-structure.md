@@ -46,7 +46,7 @@ JobQ/
 â”‚   â”œâ”€â”€ queue/                  # JobQueue implementation
 â”‚   â”œâ”€â”€ storage/                # FileJobStorage and JobRecord serialization
 â”‚   â””â”€â”€ worker/                 # Worker and WorkerPool implementations
-â”œâ”€â”€ tests/                      # Automated CTest test suites (24 test drivers)
+â”œâ”€â”€ tests/                      # Automated CTest test suites (28 test drivers)
 â””â”€â”€ examples/                   # Stress test and concurrency benchmark programs
 ```
 
@@ -97,7 +97,7 @@ Source implementations directly match their respective header headers:
 
 ## 4. Test Directory (`tests/`)
 
-JobQ contains 24 standalone test drivers, each compiled into its own executable and registered with CMake `add_test()`:
+JobQ contains 28 standalone test drivers, each compiled into its own executable and registered with CMake `add_test()`:
 
 | Test Executable | CTest Name | Focus Area |
 |---|---|---|
@@ -125,12 +125,21 @@ JobQ contains 24 standalone test drivers, each compiled into its own executable 
 | `jobq_queue_reliability_test` | `jobq_queue_reliability` | Concurrent queue behaviour, closure and delayed retries. |
 | `jobq_recovery_hardening_test` | `jobq_recovery_hardening` | Record validation and recovery of every job state. |
 | `jobq_fault_injection_test` | `jobq_fault_injection` | Fault injection and resilience (helpers in `tests/helpers/`). |
+| `jobq_latency_statistics_test` | `jobq_latency_statistics` | Latency statistics, queue-ready timestamps and execution observer accounting. |
+| `jobq_worker_scaling_statistics_test` | `jobq_worker_scaling_statistics` | Worker-scaling calculations and worker-count parsing (uses `benchmarks/ScalingAnalysis.h`). |
+| `jobq_queue_stress_test` | `jobq_queue_stress` | Bounded queue stress test (uses `benchmarks/StressRunner.h`). |
+| `jobq_contention_metrics_test` | `jobq_contention_metrics` | Contention diagnostics collector and lock wrapper. |
 
 ---
 
 ## Benchmarks Directory (`benchmarks/`)
 
 - **`benchmarks/throughput_benchmark.cpp`**: configurable throughput benchmark (CMake target `jobq_throughput_benchmark`, not run by CTest). See [Benchmarking](benchmarking.md).
+- **`benchmarks/ScalingAnalysis.h`**: header-only worker-count parsing, run summaries and speedup/efficiency calculations shared by the benchmark and its unit test.
+- **`benchmarks/queue_stress_benchmark.cpp`**: configurable queue stress benchmark (CMake target `jobq_queue_stress_benchmark`, not run by CTest).
+- **`benchmarks/contention_benchmark.cpp`**: concurrency and contention analysis benchmark (CMake target `jobq_contention_benchmark`, not run by CTest).
+- **`benchmarks/StressRunner.h`**: header-only stress run implementation shared by the stress benchmark and `jobq_queue_stress`.
+- **`benchmarks/BenchmarkCommon.h`**: workload handlers, console silencing, formatting and the per-worker latency collector shared by the benchmarks.
 
 ---
 
