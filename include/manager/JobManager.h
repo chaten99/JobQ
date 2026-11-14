@@ -15,6 +15,7 @@
 
 namespace jobq {
 
+class ContentionMetrics;
 class JobMetrics;
 
 class PrimedSharedMutex : public std::shared_mutex {
@@ -44,6 +45,8 @@ public:
         std::shared_ptr<JobStorage> storage,
         JobMetrics& metrics
     );
+
+    void setContentionMetrics(ContentionMetrics* metrics) noexcept;
 
     JobManager(const JobManager&) = delete;
     JobManager& operator=(const JobManager&) = delete;
@@ -80,6 +83,8 @@ private:
     JobMetrics* metrics_{nullptr};
 
     std::atomic<uint64_t> nextId_{1};
+
+    ContentionMetrics* contention_{nullptr};
 
     mutable PrimedSharedMutex registryMutex_;
 

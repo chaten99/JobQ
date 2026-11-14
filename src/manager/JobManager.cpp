@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "metrics/JobMetrics.h"
+#include "metrics/MeasuredLock.h"
 #include "storage/JobRecord.h"
 
 namespace jobq {
@@ -211,6 +212,10 @@ void JobManager::restoreStoredJobs() {
     }
 }
 
+void JobManager::setContentionMetrics(ContentionMetrics* metrics) noexcept {
+    contention_ = metrics;
+}
+
 JobStateObserver JobManager::createStateObserver() const {
     return makeObserver(storage_);
 }
@@ -246,7 +251,7 @@ std::shared_ptr<Job> JobManager::createJob(
     );
 
     {
-        std::unique_lock<std::shared_mutex> lock(registryMutex_);
+        MeasuredExclusiveLock lock(registryMutex_, contention_, LockCategory::JobRegistry);
         jobs_.emplace(id, job);
     }
 
@@ -269,7 +274,7 @@ std::shared_ptr<Job> JobManager::submit(
     try {
         persistSnapshot(job->snapshot());
     } catch (...) {
-        std::unique_lock<std::shared_mutex> lock(registryMutex_);
+        MeasuredExclusiveLock lock(registryMutex_, contention_, LockCategory::JobRegistry);
         jobs_.erase(job->getId());
         throw;
     }
@@ -282,13 +287,13 @@ std::shared_ptr<Job> JobManager::submit(
     try {
         job->markCancelled();
     } catch (...) {
-        std::unique_lock<std::shared_mutex> lock(registryMutex_);
+        MeasuredExclusiveLock lock(registryMutex_, contention_, LockCategory::JobRegistry);
         jobs_.erase(job->getId());
         throw;
     }
 
     {
-        std::unique_lock<std::shared_mutex> lock(registryMutex_);
+        MeasuredExclusiveLock lock(registryMutex_, contention_, LockCategory::JobRegistry);
         jobs_.erase(job->getId());
     }
 
@@ -298,7 +303,7 @@ std::shared_ptr<Job> JobManager::submit(
 }
 
 std::shared_ptr<Job> JobManager::getJob(uint64_t id) const {
-    std::shared_lock<std::shared_mutex> lock(registryMutex_);
+    MeasuredSharedLock lock(registryMutex_, contention_, LockCategory::JobRegistry);
 
     const auto it = jobs_.find(id);
 
@@ -322,7 +327,7 @@ std::optional<JobStatus> JobManager::getStatus(
 }
 
 std::size_t JobManager::totalJobs() const {
-    std::shared_lock<std::shared_mutex> lock(registryMutex_);
+    MeasuredSharedLock lock(registryMutex_, contention_, LockCategory::JobRegistry);
     return jobs_.size();
 }
 

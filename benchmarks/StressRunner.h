@@ -23,6 +23,7 @@
 #include "BenchmarkCommon.h"
 #include "executor/JobExecutor.h"
 #include "job/Job.h"
+#include "metrics/ContentionMetrics.h"
 #include "manager/JobManager.h"
 #include "metrics/ExecutionObserver.h"
 #include "metrics/JobMetrics.h"
@@ -39,6 +40,7 @@ enum class StressScenario {
     Priority,
     Variable,
     Failure,
+    PriorityRetry,
     Large
 };
 
@@ -50,6 +52,7 @@ inline const char* stressScenarioName(StressScenario scenario) {
         case StressScenario::Priority: return "priority";
         case StressScenario::Variable: return "variable";
         case StressScenario::Failure: return "failure";
+        case StressScenario::PriorityRetry: return "priority-retry";
         case StressScenario::Large: return "large";
     }
     return "unknown";
@@ -63,6 +66,7 @@ inline std::optional<StressScenario> parseStressScenario(std::string_view text) 
              StressScenario::Priority,
              StressScenario::Variable,
              StressScenario::Failure,
+             StressScenario::PriorityRetry,
              StressScenario::Large}) {
         if (text == stressScenarioName(scenario)) {
             return scenario;
@@ -78,6 +82,7 @@ struct StressConfig {
     std::uint64_t producers{4};
     std::uint64_t workers{4};
     bool collectLatency{true};
+    jobq::ContentionMetrics* contention{nullptr};
 };
 
 struct JobPlan {
@@ -125,7 +130,15 @@ inline JobPlan planFor(
 ) {
     JobPlan plan;
 
-    if (config.scenario == StressScenario::Failure) {
+    const bool failurePlan =
+        config.scenario == StressScenario::Failure ||
+        config.scenario == StressScenario::PriorityRetry;
+
+    if (config.scenario == StressScenario::PriorityRetry) {
+        plan.priority = priorityForIndex(index);
+    }
+
+    if (failurePlan) {
         const auto slot = index % 10;
 
         if (slot < 7) {
@@ -411,8 +424,12 @@ inline StressResult runStress(const StressConfig& config, std::uint64_t jobs) {
     const std::uint64_t producerCount =
         config.scenario == StressScenario::SingleProducer ? 1
                                                           : config.producers;
-    const bool failureScenario = config.scenario == StressScenario::Failure;
-    const bool priorityScenario = config.scenario == StressScenario::Priority;
+    const bool failureScenario =
+        config.scenario == StressScenario::Failure ||
+        config.scenario == StressScenario::PriorityRetry;
+    const bool priorityScenario =
+        config.scenario == StressScenario::Priority ||
+        config.scenario == StressScenario::PriorityRetry;
     const bool sampleDepth = config.scenario == StressScenario::Sustained;
     const auto workload = effectiveWorkload(config);
     const auto kinds = kindsFor(workload);
@@ -505,6 +522,13 @@ inline StressResult runStress(const StressConfig& config, std::uint64_t jobs) {
             );
         }
 
+        if (config.contention) {
+            queue.setContentionMetrics(config.contention);
+            manager.setContentionMetrics(config.contention);
+            metrics.setContentionMetrics(config.contention);
+            executor.setContentionMetrics(config.contention);
+        }
+
         pool->start();
     } catch (const std::exception& exception) {
         result.error =
@@ -595,6 +619,13 @@ inline StressResult runStress(const StressConfig& config, std::uint64_t jobs) {
     }
 
     const auto endTime = SteadyClock::now();
+
+    if (config.contention) {
+        queue.setContentionMetrics(nullptr);
+        manager.setContentionMetrics(nullptr);
+        metrics.setContentionMetrics(nullptr);
+        executor.setContentionMetrics(nullptr);
+    }
 
     if (monitor) {
         monitor->finish();
