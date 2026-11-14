@@ -9,7 +9,7 @@
 - Provide a reproducible way to compare worker counts, workloads and future changes on the same machine.
 - Verify correctness while measuring: a run only produces a throughput number if every accepted job completed exactly once.
 - Queue-wait and execution latency statistics (section 10) and worker-scaling comparisons (section 11) are built into the same tool.
-- Queue stress testing (section 12) and concurrency/contention analysis (section 13) are provided by separate executables. Performance optimization is separate future work and is not part of these tools.
+- Queue stress testing (section 12) and concurrency/contention analysis (section 13) are provided by separate executables. The 10.6 optimization and regression measurements are documented in section 16 and [the performance report](performance-baseline.md).
 
 ---
 
@@ -470,7 +470,7 @@ ctest --test-dir build -R jobq_contention_metrics --output-on-failure
 - Only the four mutex categories above are measured; the lock wait of condition-variable reacquisition and any contention at the memory-allocator or cache-line level are not.
 - `try_lock` success is recorded as zero wait, so uncontended acquisitions carry no wait sample; very short blocking can be under-measured by timer resolution.
 - The reported shares and hold times include instrumentation and timer overhead, and results depend on CPU, OS scheduling, compiler flags (the default build is `Debug`), worker/producer counts and system load.
-- Findings describe this engine on the machine used; they are not a recommendation to change any lock. Optimizations belong to a later, separate step.
+- Findings describe this engine on the machine used; they are not a recommendation to change any lock. Section 16 documents the separate optimization experiment using these diagnostics.
 
 ---
 
@@ -494,3 +494,17 @@ ctest --test-dir build -R jobq_contention_metrics --output-on-failure
 3. Run the exact command line, including `--jobs`, `--workers`, `--scenario`, `--runs` and `--warmup-jobs`.
 4. Record the CPU model, OS, compiler version, build type and the full command alongside the printed results.
 5. Repeat the whole command several times and compare medians, not single runs.
+
+---
+
+## 16. Performance optimization and regression testing (10.6)
+
+See [performance-baseline.md](performance-baseline.md) for the actual environment, initial baseline, proposed optimization, before/after distributions, latency percentiles, scaling, stress accounting, alternating A/B confirmation and limitations. Measurements use MinGW UCRT64 Release (`-O3 -DNDEBUG`, C++20), independently of the existing Debug build. No performance threshold is added to CTest.
+
+The measured queue synchronization path was investigated first: the baseline diagnostic run attributed 42.63% of aggregate thread time to queue-lock acquisition waits. The accepted experiment caches each ready entry's immutable job priority, reducing heap comparisons that otherwise access job objects while holding the queue mutex. Every insertion path sets the key, including zero-delay retries and delayed promotion. Ordering, sequence numbers, notifications, retry ready times and closure/draining semantics remain unchanged. Ready entries use eight additional bytes on this ABI; delayed entries do not change.
+
+Interpret the scope carefully: a repeatable prefilled-queue improvement does not establish a universal engine-throughput improvement. Single-producer workloads, concurrent producers, retry workloads and worker counts show different results. Both regressions and improvements are retained in the report, including noisy queue-wait tails. Metrics/registry synchronization, worker logging and allocation were not speculatively rewritten.
+
+For future comparisons, preserve an original Release executable, run identical arguments against both binaries, alternate order, repeat in fresh processes, and compare median, mean and min/max. Keep diagnostics off for production-throughput claims; use separate enabled runs to locate synchronization costs. Keep latency instrumentation consistent within a comparison, and distinguish completed jobs from execution attempts in failure workloads. Do not average percentile values and call the result a pooled percentile.
+
+Validation includes all 28 CTest tests in Debug and Release and an additional mixed-insertion ordering regression in the existing queue reliability test. The benchmark integrity checks continue to verify registry identity, unique IDs, planned attempts/retries, checksums, latency sample totals and complete draining. The installed MinGW toolchain could not link AddressSanitizer/UndefinedBehaviorSanitizer (`libasan`/`libubsan` missing); no sanitizer or race-detector success is claimed.
