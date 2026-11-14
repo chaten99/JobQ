@@ -3,7 +3,13 @@
 #include <stdexcept>
 #include <utility>
 
+#include "metrics/MeasuredLock.h"
+
 namespace jobq {
+
+void JobExecutor::setContentionMetrics(ContentionMetrics* metrics) noexcept {
+    contention_ = metrics;
+}
 
 void JobExecutor::registerHandler(
     std::string type,
@@ -21,7 +27,7 @@ void JobExecutor::registerHandler(
         );
     }
 
-    std::lock_guard<std::mutex> lock(mutex_);
+    MeasuredMutexLock lock(mutex_, contention_, LockCategory::JobExecutor);
 
     handlers_[std::move(type)] = std::move(handler);
 }
@@ -30,7 +36,7 @@ void JobExecutor::execute(const Job& job) const {
     JobHandler handler;
 
     {
-        std::lock_guard<std::mutex> lock(mutex_);
+        MeasuredMutexLock lock(mutex_, contention_, LockCategory::JobExecutor);
 
         const auto it = handlers_.find(job.getType());
 

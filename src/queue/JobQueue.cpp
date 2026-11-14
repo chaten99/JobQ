@@ -2,6 +2,8 @@
 
 #include <utility>
 
+#include "metrics/MeasuredLock.h"
+
 namespace jobq {
 
 bool JobQueue::push(std::shared_ptr<Job> job) {
@@ -10,7 +12,7 @@ bool JobQueue::push(std::shared_ptr<Job> job) {
     }
 
     {
-        std::lock_guard<std::mutex> lock(mutex_);
+        MeasuredMutexLock lock(mutex_, contention_, LockCategory::JobQueue);
 
         if (closed_) {
             return false;
@@ -39,7 +41,7 @@ bool JobQueue::pushRetry(
     }
 
     {
-        std::lock_guard<std::mutex> lock(mutex_);
+        MeasuredMutexLock lock(mutex_, contention_, LockCategory::JobQueue);
 
         if (delay <= std::chrono::milliseconds::zero()) {
             job->setQueueReadyTime(Clock::now());
@@ -88,7 +90,7 @@ void JobQueue::promoteDueRetriesLocked() {
 }
 
 std::shared_ptr<Job> JobQueue::tryPop() {
-    std::lock_guard<std::mutex> lock(mutex_);
+    MeasuredMutexLock lock(mutex_, contention_, LockCategory::JobQueue);
 
     promoteDueRetriesLocked();
 
@@ -103,7 +105,7 @@ std::shared_ptr<Job> JobQueue::tryPop() {
 }
 
 std::shared_ptr<Job> JobQueue::waitAndPop() {
-    std::unique_lock<std::mutex> lock(mutex_);
+    MeasuredMutexLock lock(mutex_, contention_, LockCategory::JobQueue);
 
     while (true) {
         promoteDueRetriesLocked();
@@ -119,20 +121,24 @@ std::shared_ptr<Job> JobQueue::waitAndPop() {
             return nullptr;
         }
 
+        lock.pauseHold();
+
         if (!delayedRetries_.empty()) {
             condition_.wait_until(
-                lock,
+                lock.native(),
                 delayedRetries_.top().readyAt
             );
         } else {
-            condition_.wait(lock);
+            condition_.wait(lock.native());
         }
+
+        lock.resumeHold();
     }
 }
 
 void JobQueue::close() {
     {
-        std::lock_guard<std::mutex> lock(mutex_);
+        MeasuredMutexLock lock(mutex_, contention_, LockCategory::JobQueue);
         closed_ = true;
     }
 
@@ -140,22 +146,26 @@ void JobQueue::close() {
 }
 
 bool JobQueue::isClosed() const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    MeasuredMutexLock lock(mutex_, contention_, LockCategory::JobQueue);
     return closed_;
 }
 
 bool JobQueue::empty() const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    MeasuredMutexLock lock(mutex_, contention_, LockCategory::JobQueue);
 
     return jobs_.empty() &&
            delayedRetries_.empty();
 }
 
 std::size_t JobQueue::size() const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    MeasuredMutexLock lock(mutex_, contention_, LockCategory::JobQueue);
 
     return jobs_.size() +
            delayedRetries_.size();
+}
+
+void JobQueue::setContentionMetrics(ContentionMetrics* metrics) noexcept {
+    contention_ = metrics;
 }
 
 }

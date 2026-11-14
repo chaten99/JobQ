@@ -13,7 +13,7 @@ JobQ uses a modular testing philosophy:
 
 ---
 
-## 2. Test Suite Catalog (27 Registered Tests)
+## 2. Test Suite Catalog (28 Registered Tests)
 
 | # | CTest Name | Source File | Description |
 |---|---|---|---|
@@ -44,13 +44,14 @@ JobQ uses a modular testing philosophy:
 | 25 | `jobq_latency_statistics` | `tests/job_latency_statistics_test.cpp` | Latency statistics (nearest-rank percentiles, sums, merging), queue-ready timestamps, and per-attempt observer accounting through a real `WorkerPool`. |
 | 26 | `jobq_worker_scaling_statistics` | `tests/worker_scaling_statistics_test.cpp` | Worker-count list parsing and validation, repeated-run summaries, speedup, efficiency, throughput change and baseline handling (pure arithmetic, no timing). |
 | 27 | `jobq_queue_stress` | `tests/job_queue_stress_test.cpp` | Bounded stress integration test (concurrent producers and consumers, sustained submission, priorities, drain, metrics consistency, repeated runs, concurrent first use of a fresh `JobManager`) built on `benchmarks/StressRunner.h`. |
+| 28 | `jobq_contention_metrics` | `tests/contention_metrics_test.cpp` | `ContentionMetrics` aggregation, histogram estimates, concurrent recording, `MeasuredLock` wait/hold semantics, and exact lock-acquisition counts through the real engine. |
 
 ---
 
 ## 3. Running Tests
 
 ### Run All Tests
-Execute all 27 test suites with failure output enabled:
+Execute all 28 test suites with failure output enabled:
 
 ```powershell
 ctest --test-dir build --output-on-failure

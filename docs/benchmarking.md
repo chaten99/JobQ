@@ -9,7 +9,7 @@
 - Provide a reproducible way to compare worker counts, workloads and future changes on the same machine.
 - Verify correctness while measuring: a run only produces a throughput number if every accepted job completed exactly once.
 - Queue-wait and execution latency statistics (section 10) and worker-scaling comparisons (section 11) are built into the same tool.
-- Queue stress testing is provided by a separate executable (section 12). Contention analysis and performance optimization are separate future work and are not part of these tools.
+- Queue stress testing (section 12) and concurrency/contention analysis (section 13) are provided by separate executables. Performance optimization is separate future work and is not part of these tools.
 
 ---
 
@@ -82,7 +82,7 @@ Smoke tests:
 .\build\jobq_throughput_benchmark.exe --jobs 1000 --workers 2 --scenario mixed --runs 2 --warmup-jobs 100
 ```
 
-The benchmark is **not** registered with CTest, so `ctest` never runs it. The stress benchmark is built as `jobq_queue_stress_benchmark` and its bounded integration test is the CTest target `jobq_queue_stress`. The pure calculations behind the scaling mode (worker-count parsing, run summaries, speedup and efficiency) live in `benchmarks/ScalingAnalysis.h` and are covered by the CTest target `jobq_worker_scaling_statistics`; latency statistics are covered by `jobq_latency_statistics`. Neither test measures performance.
+The benchmark is **not** registered with CTest, so `ctest` never runs it. The contention benchmark is built as `jobq_contention_benchmark` and its diagnostics collector is covered by the CTest target `jobq_contention_metrics`. The stress benchmark is built as `jobq_queue_stress_benchmark` and its bounded integration test is the CTest target `jobq_queue_stress`. The pure calculations behind the scaling mode (worker-count parsing, run summaries, speedup and efficiency) live in `benchmarks/ScalingAnalysis.h` and are covered by the CTest target `jobq_worker_scaling_statistics`; latency statistics are covered by `jobq_latency_statistics`. Neither test measures performance.
 
 ---
 
@@ -356,7 +356,125 @@ ctest --test-dir build -R jobq_queue_stress --output-on-failure
 
 ---
 
-## 13. Measurement Limitations
+## 13. Concurrency & Contention Analysis
+
+`jobq_contention_benchmark` measures how long threads wait for, and hold, the mutexes that the real JobQ engine uses, and compares runs with the opt-in diagnostics enabled and disabled. It reuses the stress runner (`benchmarks/StressRunner.h`) for the workload, job accounting, throughput and latency statistics, so every run still passes the full integrity checks of section 12. It is a measurement tool: nothing in the engine was optimized or changed in behaviour.
+
+### What contention means here
+
+Contention is time a thread spends blocked in `lock()` because another thread holds the same mutex. It is different from:
+
+| Quantity | Meaning | Where it comes from |
+|---|---|---|
+| **Mutex acquisition wait** | Time between attempting a specific mutex and acquiring it | `ContentionMetrics` (this section) |
+| **Critical-section hold time** | Time a thread keeps the mutex once acquired | `ContentionMetrics` (this section) |
+| **Operation latency** | Whole duration of a queue/manager/metrics call (wait + hold + other work) | Not measured separately; do not read it as lock contention |
+| **Queue waiting time** | Time a job sits ready in the queue before a worker picks it up (section 10) | `ExecutionObserver` samples |
+| **Job execution duration** | Time of one execution attempt (section 10) | `ExecutionObserver` samples |
+
+A job can wait a long time in the queue with no lock contention at all (the workers are simply busy), and a lock can be heavily contended while jobs wait very little.
+
+### Synchronization points
+
+The code was inspected for every mutex; these are the ones on the per-job path and are instrumented:
+
+| Category | Mutex | Acquired by | Per job (typical) |
+|---|---|---|---|
+| JobQueue mutex | `JobQueue::mutex_` | `push`, `pushRetry`, `tryPop`, `waitAndPop`, `close`, `isClosed`, `empty`, `size` | 1 push + 1 pop |
+| JobManager registry mutex | `JobManager::registryMutex_` (exclusive on submit, shared on lookups) | `submit`/`createJob`, `getJob`, `getStatus`, `totalJobs` | 1 (submit) |
+| JobMetrics mutex | `JobMetrics::mutex_` | every `record*` call and `snapshot` | 3 (submitted, started, completed) |
+| JobExecutor handler mutex | `JobExecutor::mutex_` | handler lookup in `execute` (every job) and `registerHandler` | 1 |
+
+Not instrumented, and why:
+
+- `Job::statusMutex_`: one mutex per job object, touched by one thread at a time, so it is not a shared resource.
+- `WorkerPool::mutex_`: guards only start/stop/state queries; it is not acquired while jobs flow, so it cannot delay job processing.
+- `Worker::threadMutex_`: lifecycle only (`start`/`join`).
+- `ContentionMetrics` itself contains no mutex (see below), so it is not measured.
+
+### Instrumentation architecture
+
+- `include/metrics/ContentionMetrics.h` and `src/metrics/ContentionMetrics.cpp`: a collector made only of relaxed atomics. Counters are sharded 32 ways (a thread keeps one shard for life) and cache-line aligned, so threads rarely write the same cache line; a snapshot sums the shards with saturating arithmetic. There is no mutex and no allocation on the recording path, so the collector cannot deadlock a worker or measure its own synchronization.
+- `include/metrics/MeasuredLock.h`: a lock wrapper used at each instrumented site. With no collector attached (the default) it only takes the mutex, with one null-pointer check and no clock reads. Disabled mode is therefore close to, but not exactly, the previous cost: the calibration line "MeasuredLock, diagnostics off" versus "lock_guard" shows the few nanoseconds per acquisition that the wrapper adds.
+- `JobQueue`, `JobManager`, `JobMetrics` and `JobExecutor` each have `setContentionMetrics(ContentionMetrics*)`. It must be called before the object is used by other threads and the collector must outlive the use; passing `nullptr` detaches. Nothing is attached unless a caller asks for it, existing constructors are unchanged, and scheduling and job outcomes are not affected (verified by `jobq_contention_metrics`).
+
+### What is measured
+
+For each category:
+
+| Statistic | How it is obtained |
+|---|---|
+| Acquisitions | Directly counted: one per lock call |
+| Blocked acquisitions | Directly counted: `try_lock()` failed, so the thread had to block |
+| Lock wait time | `0` when `try_lock()` succeeded; otherwise the time from before the blocking `lock()` to its return. Total, average and maximum are exact aggregates of those samples |
+| Over-threshold acquisitions | Waits `>= --contention-threshold-ns` (default 1000 ns; 0 counts every acquisition) |
+| Hold time | Time from acquisition to release (or to a condition-variable wait). Total, average and maximum are exact aggregates |
+| Estimated p50/p99 wait | **Estimated** from a 40-bucket power-of-two histogram: the upper bound of the bucket containing the nearest-rank sample, capped by the measured maximum. These are bucket bounds, not exact percentiles |
+| Wait share of thread time | Total wait / (sum of run durations x (producers + workers)); a derived ratio, not CPU time |
+
+Samples are nanoseconds, clamped at 2^44 ns (reported as "Clamped Samples" if it ever happens).
+
+### Condition-variable waits
+
+`JobQueue::waitAndPop()` sleeps in a condition variable while the queue is empty, which releases the mutex. The wrapper ends the current hold sample before the wait and starts a new one when the wait returns, so the sleep is **not** counted as hold time (a queue with a long-idle consumer shows more hold samples than acquisitions). The mutex reacquisition inside `condition_variable::wait` is not visible to the wrapper, so it is **not** counted as an acquisition or as lock wait; contention on the queue mutex after wake-ups is therefore somewhat under-reported.
+
+### Measurement overhead
+
+Instrumentation changes what it measures:
+
+- Each instrumented acquisition performs a `try_lock`, two clock reads and a few atomic updates. The benchmark prints a single-thread calibration at the start of every run (cost of `steady_clock::now()`, a plain `lock_guard`, the wrapper with diagnostics off and on, and the recording calls); about 7 acquisitions happen per job.
+- Recording is done after the mutex is released, except at condition-variable boundaries, so the collector adds little to hold times, but timestamps themselves lengthen each operation.
+- Wait values include timer cost and scheduling effects; they are not exact measurements of CPU time spent waiting.
+- `--diagnostics compare` (the default) runs both modes with fresh runtimes and alternating order, then prints the relative difference in median throughput, average execution time, average queue wait and workload duration. Diagnostics-enabled results are **not** unmodified production performance. Run-to-run noise on a shared machine can be larger than the instrumentation cost (a small configuration may even show the enabled mode faster), so look at the min/max lines, use `--runs 7` or more, and do not interpret small differences.
+
+### Scenarios and options
+
+| `--scenario` | Workload | Covers |
+|---|---|---|
+| `single-producer` | one producer, `--workers` consumers, no-op handlers | A and C: queue retrieval with limited producer contention (raise `--workers`) |
+| `concurrent` | `--producers` producers, `--workers` workers, lightweight CPU handlers | B and D: concurrent insertion and consumption |
+| `metrics` | as `concurrent` with no-op handlers | E: shared metrics updates dominate the per-job work |
+| `priority-retry` | priorities plus deterministic retries (1 ms backoff) | F: immediate and delayed work in the queue |
+
+```text
+--jobs N                       Total jobs per run, 1..1000000          (default 50000)
+--producers N                  Producer threads, 1..64                  (default 4)
+--workers N                    Worker threads, 1..256                   (default 4)
+--scenario NAME                see above                                (default concurrent)
+--runs N                       Measured runs per mode, 1..100           (default 3)
+--diagnostics enabled|disabled|compare                                   (default compare)
+--warmup-jobs N                Unmeasured warmup jobs per mode, 0..1000000 (default 1000)
+--contention-threshold-ns N    Over-threshold wait limit, 0..1000000000 (default 1000; optional)
+--matrix                       Run producers/workers 1/1, 2/2, 4/4, 8/8, 4/8, 8/4 sequentially
+--help
+```
+
+Parsing follows the other benchmarks (whole-number validation, overflow rejection, `--name=value`, exit code 2 on invalid arguments). `--matrix` cannot be combined with `--producers` or `--workers`. Exit codes: `0` all runs passed, `1` a run failed its integrity checks, `3` fatal shutdown timeout. Only the instrumented workload phase is measured: the diagnostics are detached after the workers are joined, so the verification that follows does not add to the counts.
+
+### Reading the report
+
+The report has, per configuration: workload results for each mode; the lock table (pooled over the successful enabled runs); an overhead comparison; and a short descriptive analysis (highest total wait, highest average wait, highest blocking rate). The analysis names the lock with the largest values but does not call it "the bottleneck": consider acquisition counts, hold times, share of thread time and the throughput change across configurations together, and remember that correlation is not causation. A lock with a high wait share and a short average hold time (for example 15 us of average wait against 300 ns of average hold) indicates many threads queueing for a short critical section; whether removing that contention would raise throughput is outside this measurement.
+
+### Commands
+
+```powershell
+.\build\jobq_contention_benchmark.exe --jobs 2000 --producers 2 --workers 2 --scenario concurrent --runs 2 --diagnostics enabled
+.\build\jobq_contention_benchmark.exe --jobs 2000 --producers 2 --workers 2 --scenario concurrent --runs 2 --diagnostics disabled
+.\build\jobq_contention_benchmark.exe --jobs 100000 --producers 4 --workers 8 --scenario concurrent --runs 7
+.\build\jobq_contention_benchmark.exe --jobs 50000 --scenario metrics --runs 5 --matrix
+ctest --test-dir build -R jobq_contention_metrics --output-on-failure
+```
+
+### Limitations
+
+- Only the four mutex categories above are measured; the lock wait of condition-variable reacquisition and any contention at the memory-allocator or cache-line level are not.
+- `try_lock` success is recorded as zero wait, so uncontended acquisitions carry no wait sample; very short blocking can be under-measured by timer resolution.
+- The reported shares and hold times include instrumentation and timer overhead, and results depend on CPU, OS scheduling, compiler flags (the default build is `Debug`), worker/producer counts and system load.
+- Findings describe this engine on the machine used; they are not a recommendation to change any lock. Optimizations belong to a later, separate step.
+
+---
+
+## 14. Measurement Limitations
 
 - Results depend on CPU model, operating system, compiler and version, **optimization flags** (the default CMake configuration here is `Debug` without `-O`), worker count, workload, system load and thermal state. Do not compare numbers across machines or builds.
 - The `noop` and `lightweight` jobs are tiny, so results mostly reflect queue and synchronization overhead; they say little about real handlers.
@@ -365,11 +483,11 @@ ctest --test-dir build -R jobq_queue_stress --output-on-failure
 - Every job stays registered in memory until the run ends, hence the 2,000,000-job cap.
 - Short runs (a few milliseconds) are noisy; use at least tens of thousands of jobs.
 - Observation on the development machine: when many measured runs execute inside one process, later runs (around the fifth onward) can be markedly slower than the first ones, while separate processes were stable. The cause was not investigated in this commit. Prefer several short invocations or a small `--runs` value and compare medians.
-- Latency statistics are collected with the instrumentation described in section 10; contention analysis (for example lock wait time) is not measured.
+- Latency statistics are collected with the instrumentation described in section 10; lock contention is measured only by the opt-in diagnostics of section 13.
 
 ---
 
-## 14. Reproducing a Run
+## 15. Reproducing a Run
 
 1. Use the same build directory configuration (`cmake -S . -B build`; note `CMAKE_BUILD_TYPE` and compiler in `build/CMakeCache.txt`).
 2. Close other heavy applications; keep the machine on mains power.

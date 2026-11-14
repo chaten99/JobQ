@@ -2,20 +2,26 @@
 
 #include <stdexcept>
 
+#include "metrics/MeasuredLock.h"
+
 namespace jobq {
 
 JobMetrics::JobMetrics()
     : startedAt_(Clock::now()) {
 }
 
+void JobMetrics::setContentionMetrics(ContentionMetrics* metrics) noexcept {
+    contention_ = metrics;
+}
+
 void JobMetrics::recordJobSubmitted() {
-    std::lock_guard<std::mutex> lock(mutex_);
+    MeasuredMutexLock lock(mutex_, contention_, LockCategory::JobMetrics);
 
     ++submittedJobs_;
 }
 
 void JobMetrics::recordExecutionStarted() {
-    std::lock_guard<std::mutex> lock(mutex_);
+    MeasuredMutexLock lock(mutex_, contention_, LockCategory::JobMetrics);
 
     ++startedExecutions_;
 }
@@ -40,7 +46,7 @@ void JobMetrics::recordExecutionCompleted(
             executionTime
         );
 
-    std::lock_guard<std::mutex> lock(mutex_);
+    MeasuredMutexLock lock(mutex_, contention_, LockCategory::JobMetrics);
 
     ++completedExecutions_;
     totalExecutionTime_ += elapsed;
@@ -56,20 +62,20 @@ void JobMetrics::recordExecutionFailed(
             executionTime
         );
 
-    std::lock_guard<std::mutex> lock(mutex_);
+    MeasuredMutexLock lock(mutex_, contention_, LockCategory::JobMetrics);
 
     ++failedExecutions_;
     totalExecutionTime_ += elapsed;
 }
 
 void JobMetrics::recordRetryScheduled() {
-    std::lock_guard<std::mutex> lock(mutex_);
+    MeasuredMutexLock lock(mutex_, contention_, LockCategory::JobMetrics);
 
     ++scheduledRetries_;
 }
 
 JobMetricsSnapshot JobMetrics::snapshot() const {
-    std::lock_guard<std::mutex> lock(mutex_);
+    MeasuredMutexLock lock(mutex_, contention_, LockCategory::JobMetrics);
 
     JobMetricsSnapshot result;
 

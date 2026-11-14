@@ -53,7 +53,7 @@ void printUsage(std::ostream& out) {
         << "  --workers N        Worker threads, 1.." << kMaxWorkers
         << " (default 4)\n"
         << "  --scenario NAME    single-producer | concurrent | sustained |\n"
-           "                     priority | variable | failure | large\n"
+           "                     priority | variable | failure | priority-retry | large\n"
            "                     (default concurrent)\n"
            "  --runs N           Measured runs, 1.."
         << kMaxRuns << " (default 3)\n"
@@ -71,6 +71,7 @@ void printUsage(std::ostream& out) {
            "  priority           20% High / 50% Normal / 30% Low jobs\n"
            "  variable           mixed-cost handlers (implies --workload mixed)\n"
            "  failure            deterministic failures and retries\n"
+           "  priority-retry     priorities combined with deterministic retries\n"
            "  large              concurrent over 10000, 50000, 100000, 250000\n"
            "                     (sizes up to --jobs; --jobs itself is added)\n"
            "\n"
@@ -158,7 +159,7 @@ ParseOutcome parseArguments(int argc, char** argv, Config& config) {
                 outcome.error =
                     "Unknown scenario '" + value +
                     "' (expected single-producer, concurrent, sustained, "
-                    "priority, variable, failure or large)";
+                    "priority, variable, failure, priority-retry or large)";
             }
         } else {
             config.workloadGiven = true;
@@ -191,11 +192,13 @@ ParseOutcome parseArguments(int argc, char** argv, Config& config) {
             "--workload or use --workload mixed";
     }
 
-    if (config.scenario == StressScenario::Failure && config.workloadGiven) {
+    if ((config.scenario == StressScenario::Failure ||
+         config.scenario == StressScenario::PriorityRetry) &&
+        config.workloadGiven) {
         outcome.ok = false;
         outcome.error =
-            "Scenario 'failure' uses its own deterministic handlers; "
-            "--workload cannot be combined with it";
+            "Scenarios failure and priority-retry use their own deterministic handlers; "
+            "--workload cannot be combined with them";
     }
 
     return outcome;
@@ -439,7 +442,8 @@ int main(int argc, char** argv) {
               << "  Repetitions:          " << config.runs << '\n'
               << "  Warmup Jobs:          " << config.warmupJobs << '\n';
 
-    if (config.scenario == StressScenario::Failure) {
+    if (config.scenario == StressScenario::Failure ||
+        config.scenario == StressScenario::PriorityRetry) {
         std::cout << "  Handlers:             deterministic failure/retry mix\n";
     } else {
         std::cout << "  Workload:             " << scenarioName(workload) << '\n';
