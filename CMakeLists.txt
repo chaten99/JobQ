@@ -33,6 +33,20 @@ target_include_directories(jobq_core PUBLIC
 target_compile_features(jobq_core PUBLIC cxx_std_20)
 target_link_libraries(jobq_core PUBLIC Threads::Threads)
 
+add_library(jobq_api STATIC
+    src/api/Engine.cpp
+)
+
+add_library(JobQ::API ALIAS jobq_api)
+
+target_link_libraries(jobq_api PUBLIC JobQ::Core)
+
+add_executable(jobq_public_api_example
+    examples/public_api_example.cpp
+)
+
+target_link_libraries(jobq_public_api_example PRIVATE JobQ::API)
+
 add_executable(jobq
     src/main.cpp
 )
@@ -74,6 +88,19 @@ target_link_libraries(jobq_cli PRIVATE JobQ::Core)
 include(CTest)
 
 if(BUILD_TESTING)
+
+    add_executable(jobq_public_api_test
+        tests/public_api_test.cpp
+    )
+
+    target_link_libraries(jobq_public_api_test PRIVATE JobQ::API)
+
+    add_test(
+        NAME jobq_public_api
+        COMMAND jobq_public_api_test
+    )
+
+    set_tests_properties(jobq_public_api PROPERTIES TIMEOUT 30)
 
     add_executable(jobq_core_usage_test
         tests/core_library_usage_test.cpp
