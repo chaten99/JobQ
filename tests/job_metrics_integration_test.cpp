@@ -703,9 +703,16 @@ void testSnapshotConsistencyAndEdgeCases() {
         jobq::JobManager manager(queue, metrics);
         jobq::JobExecutor executor;
 
+        std::latch jobStarted{1};
+        std::latch firstSnapshotTaken{1};
+
         executor.registerHandler(
             "SPIN_TASK",
-            [](const jobq::Job&) {
+            [&](const jobq::Job& job) {
+                if (job.getId() == 1) {
+                    jobStarted.count_down();
+                    firstSnapshotTaken.wait();
+                }
                 std::this_thread::yield();
             }
         );
@@ -721,6 +728,15 @@ void testSnapshotConsistencyAndEdgeCases() {
         std::atomic<std::size_t> successfulSnapshotReads{0};
 
         std::thread snapshotReader([&]() {
+            // Keep one execution active until the reader has sampled metrics.
+            jobStarted.wait();
+            const auto firstSnapshot = metrics.snapshot();
+            if (firstSnapshot.finishedExecutions ==
+                firstSnapshot.completedExecutions + firstSnapshot.failedExecutions) {
+                ++successfulSnapshotReads;
+            }
+            firstSnapshotTaken.count_down();
+
             while (readerRunning.load(std::memory_order_relaxed)) {
                 const auto snap = metrics.snapshot();
                 if (snap.finishedExecutions ==

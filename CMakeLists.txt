@@ -9,7 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(Threads REQUIRED)
 
-set(JOBQ_CORE_SOURCES
+add_library(jobq_core STATIC
     src/job/Job.cpp
     src/queue/JobQueue.cpp
     src/executor/JobExecutor.cpp
@@ -24,88 +24,76 @@ set(JOBQ_CORE_SOURCES
     src/metrics/ContentionMetrics.cpp
 )
 
-add_executable(jobq
-    src/main.cpp
-    ${JOBQ_CORE_SOURCES}
-)
+add_library(JobQ::Core ALIAS jobq_core)
 
-target_include_directories(jobq PRIVATE
+target_include_directories(jobq_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
-target_link_libraries(jobq PRIVATE Threads::Threads)
+target_compile_features(jobq_core PUBLIC cxx_std_20)
+target_link_libraries(jobq_core PUBLIC Threads::Threads)
+
+add_executable(jobq
+    src/main.cpp
+)
+
+target_link_libraries(jobq PRIVATE JobQ::Core)
 
 add_executable(jobq_stress_test
     examples/stress_test.cpp
-    ${JOBQ_CORE_SOURCES}
 )
 
-target_include_directories(jobq_stress_test PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-target_link_libraries(jobq_stress_test PRIVATE Threads::Threads)
+target_link_libraries(jobq_stress_test PRIVATE JobQ::Core)
 
 add_executable(jobq_throughput_benchmark
     benchmarks/throughput_benchmark.cpp
-    ${JOBQ_CORE_SOURCES}
 )
 
-target_include_directories(jobq_throughput_benchmark PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-target_link_libraries(jobq_throughput_benchmark PRIVATE Threads::Threads)
+target_link_libraries(jobq_throughput_benchmark PRIVATE JobQ::Core)
 
 add_executable(jobq_queue_stress_benchmark
     benchmarks/queue_stress_benchmark.cpp
-    ${JOBQ_CORE_SOURCES}
 )
 
-target_include_directories(jobq_queue_stress_benchmark PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-target_link_libraries(jobq_queue_stress_benchmark PRIVATE Threads::Threads)
+target_link_libraries(jobq_queue_stress_benchmark PRIVATE JobQ::Core)
 
 add_executable(jobq_contention_benchmark
     benchmarks/contention_benchmark.cpp
-    ${JOBQ_CORE_SOURCES}
 )
 
-target_include_directories(jobq_contention_benchmark PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-target_link_libraries(jobq_contention_benchmark PRIVATE Threads::Threads)
+target_link_libraries(jobq_contention_benchmark PRIVATE JobQ::Core)
 
 add_executable(jobq_cli
     src/cli/main.cpp
     src/cli/CommandLine.cpp
     src/cli/CommandHandlers.cpp
-    ${JOBQ_CORE_SOURCES}
 )
 
-target_include_directories(jobq_cli PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-)
-
-target_link_libraries(jobq_cli PRIVATE Threads::Threads)
+target_link_libraries(jobq_cli PRIVATE JobQ::Core)
 
 include(CTest)
 
 if(BUILD_TESTING)
 
+    add_executable(jobq_core_usage_test
+        tests/core_library_usage_test.cpp
+    )
+
+    target_link_libraries(jobq_core_usage_test PRIVATE JobQ::Core)
+
+    # Verify that the library raises a consumer's C++ requirement to C++20.
+    set_target_properties(jobq_core_usage_test PROPERTIES CXX_STANDARD 17)
+
+    add_test(
+        NAME jobq_core_library_usage
+        COMMAND jobq_core_usage_test
+    )
+
     add_executable(jobq_manager_test
         tests/job_manager_test.cpp
-        ${JOBQ_CORE_SOURCES}
     )
 
-    target_include_directories(jobq_manager_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-
-    target_link_libraries(jobq_manager_test PRIVATE Threads::Threads)
+    target_link_libraries(jobq_manager_test PRIVATE JobQ::Core)
 
     add_test(
         NAME jobq_manager_lifecycle
@@ -114,14 +102,9 @@ if(BUILD_TESTING)
 
     add_executable(jobq_priority_test
         tests/job_priority_test.cpp
-        ${JOBQ_CORE_SOURCES}
     )
 
-    target_include_directories(jobq_priority_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-
-    target_link_libraries(jobq_priority_test PRIVATE Threads::Threads)
+    target_link_libraries(jobq_priority_test PRIVATE JobQ::Core)
 
     add_test(
         NAME jobq_priority_scheduling
@@ -130,14 +113,9 @@ if(BUILD_TESTING)
 
     add_executable(jobq_retry_policy_test
         tests/job_retry_policy_test.cpp
-        ${JOBQ_CORE_SOURCES}
     )
 
-    target_include_directories(jobq_retry_policy_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-
-    target_link_libraries(jobq_retry_policy_test PRIVATE Threads::Threads)
+    target_link_libraries(jobq_retry_policy_test PRIVATE JobQ::Core)
 
     add_test(
         NAME jobq_retry_policy
@@ -146,14 +124,9 @@ if(BUILD_TESTING)
 
     add_executable(jobq_retry_execution_test
         tests/job_retry_execution_test.cpp
-        ${JOBQ_CORE_SOURCES}
     )
 
-    target_include_directories(jobq_retry_execution_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-
-    target_link_libraries(jobq_retry_execution_test PRIVATE Threads::Threads)
+    target_link_libraries(jobq_retry_execution_test PRIVATE JobQ::Core)
 
     add_test(
         NAME jobq_retry_execution
@@ -162,14 +135,9 @@ if(BUILD_TESTING)
 
     add_executable(jobq_retry_backoff_test
         tests/job_retry_backoff_test.cpp
-        ${JOBQ_CORE_SOURCES}
     )
 
-    target_include_directories(jobq_retry_backoff_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-
-    target_link_libraries(jobq_retry_backoff_test PRIVATE Threads::Threads)
+    target_link_libraries(jobq_retry_backoff_test PRIVATE JobQ::Core)
 
     add_test(
         NAME jobq_retry_backoff
@@ -178,14 +146,9 @@ if(BUILD_TESTING)
 
     add_executable(jobq_storage_record_test
         tests/job_record_test.cpp
-        ${JOBQ_CORE_SOURCES}
     )
 
-    target_include_directories(jobq_storage_record_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-
-    target_link_libraries(jobq_storage_record_test PRIVATE Threads::Threads)
+    target_link_libraries(jobq_storage_record_test PRIVATE JobQ::Core)
 
     add_test(
         NAME jobq_storage_record
@@ -194,14 +157,9 @@ if(BUILD_TESTING)
 
     add_executable(jobq_file_storage_test
         tests/job_file_storage_test.cpp
-        ${JOBQ_CORE_SOURCES}
     )
 
-    target_include_directories(jobq_file_storage_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-
-    target_link_libraries(jobq_file_storage_test PRIVATE Threads::Threads)
+    target_link_libraries(jobq_file_storage_test PRIVATE JobQ::Core)
 
     add_test(
         NAME jobq_file_storage
@@ -210,14 +168,9 @@ if(BUILD_TESTING)
 
     add_executable(jobq_manager_persistence_test
         tests/job_manager_persistence_test.cpp
-        ${JOBQ_CORE_SOURCES}
     )
 
-    target_include_directories(jobq_manager_persistence_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-
-    target_link_libraries(jobq_manager_persistence_test PRIVATE Threads::Threads)
+    target_link_libraries(jobq_manager_persistence_test PRIVATE JobQ::Core)
 
     add_test(
         NAME jobq_manager_persistence
@@ -226,14 +179,9 @@ if(BUILD_TESTING)
 
     add_executable(jobq_recovery_test
         tests/job_recovery_test.cpp
-        ${JOBQ_CORE_SOURCES}
     )
 
-    target_include_directories(jobq_recovery_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-
-    target_link_libraries(jobq_recovery_test PRIVATE Threads::Threads)
+    target_link_libraries(jobq_recovery_test PRIVATE JobQ::Core)
 
     add_test(
         NAME jobq_crash_recovery
@@ -242,17 +190,11 @@ if(BUILD_TESTING)
 
     add_executable(jobq_persistence_recovery_regression_test
         tests/job_persistence_recovery_regression_test.cpp
-        ${JOBQ_CORE_SOURCES}
-    )
-
-    target_include_directories(
-        jobq_persistence_recovery_regression_test
-        PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 
     target_link_libraries(
         jobq_persistence_recovery_regression_test
-        PRIVATE Threads::Threads
+        PRIVATE JobQ::Core
     )
 
     add_test(
@@ -265,9 +207,7 @@ if(BUILD_TESTING)
         src/cli/CommandLine.cpp
     )
 
-    target_include_directories(jobq_cli_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
+    target_link_libraries(jobq_cli_test PRIVATE JobQ::Core)
 
     add_test(
         NAME jobq_cli_foundation
@@ -278,14 +218,9 @@ if(BUILD_TESTING)
         tests/cli_submit_test.cpp
         src/cli/CommandLine.cpp
         src/cli/CommandHandlers.cpp
-        ${JOBQ_CORE_SOURCES}
     )
 
-    target_include_directories(jobq_cli_submit_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-
-    target_link_libraries(jobq_cli_submit_test PRIVATE Threads::Threads)
+    target_link_libraries(jobq_cli_submit_test PRIVATE JobQ::Core)
 
     add_test(
         NAME jobq_cli_submit
@@ -296,16 +231,11 @@ if(BUILD_TESTING)
         tests/cli_inspection_test.cpp
         src/cli/CommandLine.cpp
         src/cli/CommandHandlers.cpp
-        ${JOBQ_CORE_SOURCES}
-    )
-
-    target_include_directories(jobq_cli_inspection_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
     )
 
     target_link_libraries(
         jobq_cli_inspection_test
-        PRIVATE Threads::Threads
+        PRIVATE JobQ::Core
     )
 
     add_test(
@@ -317,14 +247,9 @@ if(BUILD_TESTING)
         tests/cli_run_test.cpp
         src/cli/CommandLine.cpp
         src/cli/CommandHandlers.cpp
-        ${JOBQ_CORE_SOURCES}
     )
 
-    target_include_directories(jobq_cli_run_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-
-    target_link_libraries(jobq_cli_run_test PRIVATE Threads::Threads)
+    target_link_libraries(jobq_cli_run_test PRIVATE JobQ::Core)
 
     add_test(
         NAME jobq_cli_run
@@ -335,9 +260,7 @@ if(BUILD_TESTING)
         tests/cli_workflow_test.cpp
     )
 
-    target_include_directories(jobq_cli_workflow_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
+    target_link_libraries(jobq_cli_workflow_test PRIVATE JobQ::Core)
 
     add_dependencies(
         jobq_cli_workflow_test
@@ -352,16 +275,10 @@ if(BUILD_TESTING)
 
     add_executable(jobq_metrics_test
         tests/job_metrics_test.cpp
-        src/metrics/JobMetrics.cpp
-        src/metrics/ContentionMetrics.cpp
-    )
-
-    target_include_directories(jobq_metrics_test PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/include"
     )
 
     target_link_libraries(jobq_metrics_test PRIVATE
-        Threads::Threads
+        JobQ::Core
     )
 
     add_test(
@@ -373,14 +290,9 @@ if(BUILD_TESTING)
         tests/cli_metrics_test.cpp
         src/cli/CommandLine.cpp
         src/cli/CommandHandlers.cpp
-        ${JOBQ_CORE_SOURCES}
     )
 
-    target_include_directories(jobq_cli_metrics_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-
-    target_link_libraries(jobq_cli_metrics_test PRIVATE Threads::Threads)
+    target_link_libraries(jobq_cli_metrics_test PRIVATE JobQ::Core)
 
     add_test(
         NAME jobq_cli_metrics
@@ -389,14 +301,9 @@ if(BUILD_TESTING)
 
     add_executable(jobq_metrics_integration_test
         tests/job_metrics_integration_test.cpp
-        ${JOBQ_CORE_SOURCES}
     )
 
-    target_include_directories(jobq_metrics_integration_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-
-    target_link_libraries(jobq_metrics_integration_test PRIVATE Threads::Threads)
+    target_link_libraries(jobq_metrics_integration_test PRIVATE JobQ::Core)
 
     add_test(
         NAME jobq_metrics_integration
@@ -407,14 +314,9 @@ if(BUILD_TESTING)
         tests/job_metrics_json_test.cpp
         src/cli/CommandLine.cpp
         src/cli/CommandHandlers.cpp
-        ${JOBQ_CORE_SOURCES}
     )
 
-    target_include_directories(jobq_metrics_json_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-
-    target_link_libraries(jobq_metrics_json_test PRIVATE Threads::Threads)
+    target_link_libraries(jobq_metrics_json_test PRIVATE JobQ::Core)
 
     add_test(
         NAME jobq_metrics_json
@@ -423,14 +325,9 @@ if(BUILD_TESTING)
 
     add_executable(jobq_worker_shutdown_test
         tests/worker_shutdown_test.cpp
-        ${JOBQ_CORE_SOURCES}
     )
 
-    target_include_directories(jobq_worker_shutdown_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-
-    target_link_libraries(jobq_worker_shutdown_test PRIVATE Threads::Threads)
+    target_link_libraries(jobq_worker_shutdown_test PRIVATE JobQ::Core)
 
     add_test(
         NAME jobq_worker_shutdown
@@ -439,14 +336,9 @@ if(BUILD_TESTING)
 
     add_executable(jobq_worker_lifecycle_test
         tests/worker_lifecycle_test.cpp
-        ${JOBQ_CORE_SOURCES}
     )
 
-    target_include_directories(jobq_worker_lifecycle_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-
-    target_link_libraries(jobq_worker_lifecycle_test PRIVATE Threads::Threads)
+    target_link_libraries(jobq_worker_lifecycle_test PRIVATE JobQ::Core)
 
     add_test(
         NAME jobq_worker_lifecycle
@@ -455,14 +347,9 @@ if(BUILD_TESTING)
 
     add_executable(jobq_queue_reliability_test
         tests/job_queue_reliability_test.cpp
-        ${JOBQ_CORE_SOURCES}
     )
 
-    target_include_directories(jobq_queue_reliability_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-
-    target_link_libraries(jobq_queue_reliability_test PRIVATE Threads::Threads)
+    target_link_libraries(jobq_queue_reliability_test PRIVATE JobQ::Core)
 
     add_test(
         NAME jobq_queue_reliability
@@ -471,14 +358,9 @@ if(BUILD_TESTING)
 
     add_executable(jobq_recovery_hardening_test
         tests/job_recovery_hardening_test.cpp
-        ${JOBQ_CORE_SOURCES}
     )
 
-    target_include_directories(jobq_recovery_hardening_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-
-    target_link_libraries(jobq_recovery_hardening_test PRIVATE Threads::Threads)
+    target_link_libraries(jobq_recovery_hardening_test PRIVATE JobQ::Core)
 
     add_test(
         NAME jobq_recovery_hardening
@@ -487,15 +369,13 @@ if(BUILD_TESTING)
 
     add_executable(jobq_fault_injection_test
         tests/fault_injection_test.cpp
-        ${JOBQ_CORE_SOURCES}
     )
 
     target_include_directories(jobq_fault_injection_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/tests
     )
 
-    target_link_libraries(jobq_fault_injection_test PRIVATE Threads::Threads)
+    target_link_libraries(jobq_fault_injection_test PRIVATE JobQ::Core)
 
     add_test(
         NAME jobq_fault_injection
@@ -504,14 +384,9 @@ if(BUILD_TESTING)
 
     add_executable(jobq_latency_statistics_test
         tests/job_latency_statistics_test.cpp
-        ${JOBQ_CORE_SOURCES}
     )
 
-    target_include_directories(jobq_latency_statistics_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-
-    target_link_libraries(jobq_latency_statistics_test PRIVATE Threads::Threads)
+    target_link_libraries(jobq_latency_statistics_test PRIVATE JobQ::Core)
 
     add_test(
         NAME jobq_latency_statistics
@@ -533,15 +408,13 @@ if(BUILD_TESTING)
 
     add_executable(jobq_queue_stress_test
         tests/job_queue_stress_test.cpp
-        ${JOBQ_CORE_SOURCES}
     )
 
     target_include_directories(jobq_queue_stress_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
         ${CMAKE_CURRENT_SOURCE_DIR}/benchmarks
     )
 
-    target_link_libraries(jobq_queue_stress_test PRIVATE Threads::Threads)
+    target_link_libraries(jobq_queue_stress_test PRIVATE JobQ::Core)
 
     add_test(
         NAME jobq_queue_stress
@@ -550,14 +423,9 @@ if(BUILD_TESTING)
 
     add_executable(jobq_contention_metrics_test
         tests/contention_metrics_test.cpp
-        ${JOBQ_CORE_SOURCES}
     )
 
-    target_include_directories(jobq_contention_metrics_test PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/include
-    )
-
-    target_link_libraries(jobq_contention_metrics_test PRIVATE Threads::Threads)
+    target_link_libraries(jobq_contention_metrics_test PRIVATE JobQ::Core)
 
     add_test(
         NAME jobq_contention_metrics
