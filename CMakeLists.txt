@@ -1,7 +1,7 @@
 
 cmake_minimum_required(VERSION 3.20)
 
-project(JobQ LANGUAGES CXX)
+project(JobQ VERSION 0.1.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -26,8 +26,11 @@ add_library(jobq_core STATIC
 
 add_library(JobQ::Core ALIAS jobq_core)
 
+set_target_properties(jobq_core PROPERTIES EXPORT_NAME Core)
+
 target_include_directories(jobq_core PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:include>
 )
 
 target_compile_features(jobq_core PUBLIC cxx_std_20)
@@ -38,8 +41,32 @@ add_library(jobq_api STATIC
 )
 
 add_library(JobQ::API ALIAS jobq_api)
+add_library(JobQ::JobQ ALIAS jobq_api)
+
+set_target_properties(jobq_api PROPERTIES EXPORT_NAME JobQ)
 
 target_link_libraries(jobq_api PUBLIC JobQ::Core)
+
+include(CMakePackageConfigHelpers)
+
+set(JOBQ_BUILD_PACKAGE_DIR "${CMAKE_CURRENT_BINARY_DIR}/cmake/JobQ")
+
+configure_package_config_file(
+    cmake/JobQConfig.cmake.in
+    "${JOBQ_BUILD_PACKAGE_DIR}/JobQConfig.cmake"
+    INSTALL_DESTINATION cmake/JobQ
+)
+
+write_basic_package_version_file(
+    "${JOBQ_BUILD_PACKAGE_DIR}/JobQConfigVersion.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMinorVersion
+)
+
+export(TARGETS jobq_core jobq_api
+    FILE "${JOBQ_BUILD_PACKAGE_DIR}/JobQTargets.cmake"
+    NAMESPACE JobQ::
+)
 
 add_executable(jobq_public_api_example
     examples/public_api_example.cpp

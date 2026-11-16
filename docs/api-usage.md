@@ -4,7 +4,7 @@ This guide demonstrates how to embed and use JobQ within your own modern C++20 a
 
 ## Public Engine API
 
-Include `jobq/Engine.h` and link to `JobQ::API` (`jobq_api`). This static library
+Include `jobq/Engine.h` and link to `JobQ::JobQ` (`jobq_api`). This static library
 owns the high-level API implementation and links publicly to `JobQ::Core`
 (`jobq_core`). The Engine implementation privately owns a queue, executor,
 manager, metrics collector, and worker pool. The existing lower-level interfaces
@@ -17,7 +17,7 @@ cmake_minimum_required(VERSION 3.20)
 project(MyApplication LANGUAGES CXX)
 add_subdirectory(path/to/JobQ jobq-build EXCLUDE_FROM_ALL)
 add_executable(my_application main.cpp)
-target_link_libraries(my_application PRIVATE JobQ::API)
+target_link_libraries(my_application PRIVATE JobQ::JobQ)
 ```
 
 The API has three public headers, `jobq/Engine.h`, `jobq/EngineConfig.h`, and

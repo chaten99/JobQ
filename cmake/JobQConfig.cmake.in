@@ -1,0 +1,12 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(Threads)
+
+include("${CMAKE_CURRENT_LIST_DIR}/JobQTargets.cmake")
+
+if(NOT TARGET JobQ::API)
+    add_library(JobQ::API ALIAS JobQ::JobQ)
+endif()
+
+check_required_components(JobQ)
