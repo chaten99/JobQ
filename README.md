@@ -110,7 +110,7 @@ int main() {
 }
 ```
 
-Link the public API target with `target_link_libraries(my_application PRIVATE JobQ::API)`.
+Link the public API target with `target_link_libraries(my_application PRIVATE JobQ::JobQ)`.
 The `jobq_api` static library links publicly to `jobq_core`, propagating its
 include paths, C++20 requirement, and thread dependency. Register handlers before
 starting, submit while running, and call `stop()` to drain work and join workers.
@@ -119,6 +119,25 @@ demonstrates the public interface. Configuration, retries, persistence, lifecycl
 and error behavior are covered in the [C++ API guide](docs/api-usage.md).
 
 ## Reusable Core Library
+
+JobQ also generates a build-tree CMake package named `JobQ`, version `0.1.0`.
+Build the libraries, then point a separate consumer at the generated directory.
+
+```powershell
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target jobq_api
+cmake -S tests/package_consumer -B build/package-consumer -DJobQ_DIR=D:/JobQ/build/cmake/JobQ
+cmake --build build/package-consumer
+ctest --test-dir build/package-consumer --output-on-failure
+```
+
+The consumer uses `find_package(JobQ 0.1 CONFIG REQUIRED)` and links to
+`JobQ::JobQ` for the public Engine API or `JobQ::Core` for lower-level components.
+`JobQ::API` remains a compatibility alias. Package files are generated under
+`<build-directory>/cmake/JobQ`. This support references the original source and
+build trees, which must remain available. Installation and package-manager
+distribution are future work. See the [CMake package guide](docs/cmake-packaging.md)
+for usage and version compatibility.
 
 The `jobq_core` static library contains the job-processing engine, persistence,
 metrics, and latency/contention support. The application, CLI, benchmarks, and
