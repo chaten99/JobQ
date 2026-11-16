@@ -3,6 +3,8 @@ cmake_minimum_required(VERSION 3.20)
 
 project(JobQ VERSION 0.1.0 LANGUAGES CXX)
 
+include(GNUInstallDirs)
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -30,7 +32,7 @@ set_target_properties(jobq_core PROPERTIES EXPORT_NAME Core)
 
 target_include_directories(jobq_core PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-    $<INSTALL_INTERFACE:include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 target_compile_features(jobq_core PUBLIC cxx_std_20)
@@ -50,6 +52,7 @@ target_link_libraries(jobq_api PUBLIC JobQ::Core)
 include(CMakePackageConfigHelpers)
 
 set(JOBQ_BUILD_PACKAGE_DIR "${CMAKE_CURRENT_BINARY_DIR}/cmake/JobQ")
+set(JOBQ_INSTALL_PACKAGE_DIR "${CMAKE_INSTALL_LIBDIR}/cmake/JobQ")
 
 configure_package_config_file(
     cmake/JobQConfig.cmake.in
@@ -63,7 +66,46 @@ write_basic_package_version_file(
     COMPATIBILITY SameMinorVersion
 )
 
-export(TARGETS jobq_core jobq_api
+install(TARGETS jobq_core jobq_api
+    EXPORT JobQTargets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+
+install(DIRECTORY
+    include/jobq
+    include/job
+    include/queue
+    include/executor
+    include/worker
+    include/manager
+    include/storage
+    include/metrics
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    FILES_MATCHING PATTERN "*.h"
+    PATTERN "MeasuredLock.h" EXCLUDE
+)
+
+configure_package_config_file(
+    cmake/JobQConfig.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/cmake/install/JobQConfig.cmake"
+    INSTALL_DESTINATION ${JOBQ_INSTALL_PACKAGE_DIR}
+)
+
+install(FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/cmake/install/JobQConfig.cmake"
+    "${JOBQ_BUILD_PACKAGE_DIR}/JobQConfigVersion.cmake"
+    DESTINATION ${JOBQ_INSTALL_PACKAGE_DIR}
+)
+
+install(EXPORT JobQTargets
+    FILE JobQTargets.cmake
+    NAMESPACE JobQ::
+    DESTINATION ${JOBQ_INSTALL_PACKAGE_DIR}
+)
+
+export(EXPORT JobQTargets
     FILE "${JOBQ_BUILD_PACKAGE_DIR}/JobQTargets.cmake"
     NAMESPACE JobQ::
 )
