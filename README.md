@@ -16,7 +16,7 @@ Conceptually inspired by task processing systems like Celery and BullMQ, JobQ br
 - **Crash Recovery:** Startup recovery pipeline reconciling latest job states and automatically re-enqueuing interrupted and pending tasks.
 - **Multi-Command CLI:** Full-featured command-line tool (`jobq_cli`) supporting `submit`, `list`, `status`, `run`, and `metrics` commands.
 - **Metrics & Observability:** Thread-safe execution counters, monotonic latency measurements (`steady_clock`), real-time throughput calculations, and Schema Version 1 structured JSON export.
-- **Comprehensive Testing:** 28 automated test suites integrated with CTest, including multi-threaded concurrency proofs using `std::latch`.
+- **Comprehensive Testing:** 33 automated test suites and four public API example checks integrated with CTest, including multi-threaded concurrency proofs using `std::latch`.
 
 ---
 
@@ -85,7 +85,107 @@ cmake --build build
 ```powershell
 ctest --test-dir build --output-on-failure
 ```
-All 28 automated test suites should pass cleanly.
+With examples enabled, all 37 CTest entries should pass cleanly.
+
+---
+
+## Public C++ API
+
+Use `jobq::Engine` to own and coordinate workers, handlers, submissions, and
+metrics from an application.
+
+```cpp
+#include <iostream>
+#include "jobq/Engine.h"
+
+int main() {
+    jobq::Engine engine({.workerCount = 2});
+    engine.registerHandler("EMAIL", [](const jobq::Job& job) {
+        std::cout << "Email to " << job.getPayload() << '\n';
+    });
+    engine.start();
+    const auto id = engine.submit("EMAIL", "reader@example.com");
+    engine.stop();
+    return engine.getStatus(id) == jobq::JobStatus::Completed ? 0 : 1;
+}
+```
+
+Link the public API target with `target_link_libraries(my_application PRIVATE JobQ::JobQ)`.
+The `jobq_api` static library links publicly to `jobq_core`, propagating its
+include paths, C++20 requirement, and thread dependency. Register handlers before
+starting, submit while running, and call `stop()` to drain work and join workers.
+Destruction also stops the engine. The executable `jobq_public_api_example`
+demonstrates the public interface. Configuration, retries, persistence, lifecycle,
+and error behavior are covered in the [C++ API guide](docs/api-usage.md).
+
+Practical examples under `examples/basic-usage`, `multiple-handlers`,
+`job-options`, and `error-handling` demonstrate handler routing, payloads,
+priority/retries, completion synchronization, and application-side error handling.
+They build by default and can be disabled with `-DJOBQ_BUILD_EXAMPLES=OFF`.
+Run them with `ctest --test-dir build -R jobq_example --output-on-failure`.
+Public API suites live under `tests/public_api`. See the
+[examples guide](docs/examples.md) for target names, usage, and installed consumers.
+
+## Reusable Core Library
+
+### Versioning and compatibility
+
+The current development version is `0.1.0`, defined by the root CMake project.
+Include `jobq/Version.h` to read `jobq::version::major`, `minor`, `patch`, and
+`string` as compile-time values. The generated header is available to build-tree
+and installed consumers. Packages use same-minor compatibility during pre-1.0
+development. Patch releases aim to preserve source compatibility within the
+minor line; minor releases may contain documented breaking changes.
+Consumers should rebuild and test when upgrading. See the
+[versioning policy](docs/versioning.md) for public interface boundaries,
+deprecation expectations, CMake selection rules, and ABI limitations.
+
+JobQ also generates a build-tree CMake package named `JobQ`, version `0.1.0`.
+Build the libraries, then point a separate consumer at the generated directory.
+
+```powershell
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --target jobq_api
+cmake -S tests/package_consumer -B build/package-consumer -DJobQ_DIR=D:/JobQ/build/cmake/JobQ
+cmake --build build/package-consumer
+ctest --test-dir build/package-consumer --output-on-failure
+```
+
+The consumer uses `find_package(JobQ 0.1 CONFIG REQUIRED)` and links to
+`JobQ::JobQ` for the public Engine API or `JobQ::Core` for lower-level components.
+`JobQ::API` remains a compatibility alias. Package files are generated under
+`<build-directory>/cmake/JobQ`. This support references the original source and
+build trees, which must remain available. For a relocatable installed package,
+use `cmake --install build --prefix <prefix>` and configure the consumer with
+`-DCMAKE_PREFIX_PATH=<prefix>`. Libraries, public headers, and CMake package
+metadata are installed using `GNUInstallDirs`. The separate
+`examples/installed-consumer` project exercises this workflow.
+See the [CMake package guide](docs/cmake-packaging.md) for installation commands,
+header coverage, relocation, and version compatibility.
+
+The `jobq_core` static library contains the job-processing engine, persistence,
+metrics, and latency/contention support. The application, CLI, benchmarks, and
+engine tests link to it through the `JobQ::Core` alias. CLI implementation files
+belong to their executable targets.
+
+Build the library independently with `cmake --build build --target jobq_core`.
+A consumer can add the JobQ source checkout to its CMake build and link its own
+executable as follows.
+
+```cmake
+cmake_minimum_required(VERSION 3.20)
+project(MyApplication LANGUAGES CXX)
+
+add_subdirectory(path/to/JobQ jobq-build EXCLUDE_FROM_ALL)
+add_executable(my_application main.cpp)
+target_link_libraries(my_application PRIVATE JobQ::Core)
+```
+
+Linking propagates the public `include/` directory, C++20 requirement, and
+`Threads::Threads` dependency. Existing includes such as `"manager/JobManager.h"`
+work in the consumer. The library usage smoke test constructs a manager, queue,
+executor, metrics, and worker pool and verifies completed jobs and accounting.
+[See the complete consumer example](tests/core_library_usage_test.cpp).
 
 ---
 
@@ -223,7 +323,7 @@ queue/                  # JobQueue priority queue and delayed retries
 storage/                # FileJobStorage and JobRecord
 worker/                 # Worker thread and WorkerPool
 src/                        # Implementations and main entry points
-tests/                      # 28 standalone automated test drivers
+tests/                      # Automated test drivers and package consumer
 examples/                   # Stress test and concurrency benchmark programs
 ```
 
@@ -248,7 +348,7 @@ Detailed technical documentation is available in the [`docs/`](docs/README.md) d
 | [Metrics & Observability](docs/metrics-and-observability.md) | Counters, monotonic latency timers, throughput, and JSON export. |
 | [C++ API Usage](docs/api-usage.md) | Real C++20 code samples for embedding JobQ. |
 | [Examples & Demos](docs/examples.md) | Running stress tests and in-process runtime benchmarks. |
-| [Testing Guide](docs/testing.md) | Catalog of the 28 CTest test suites and how to add new tests. |
+| [Testing Guide](docs/testing.md) | Catalog of the CTest test suites and how to add new tests. |
 | [Design Decisions](docs/design-decisions.md) | Architectural trade-offs and rationale. |
 | [Project Status & Roadmap](docs/roadmap.md) | Verified capabilities vs. planned future milestones. |
 | [Contributing Guide](CONTRIBUTING.md) | Development standards, coding style, and PR process. |
@@ -262,7 +362,7 @@ Detailed technical documentation is available in the [`docs/`](docs/README.md) d
 - Fully functioning in-process background job processing engine.
 - Single-host file journal persistence and crash recovery.
 - Multi-command CLI and Schema v1 JSON runtime metrics.
-- 28/28 passing automated CTest test suites.
+- 33 automated test suites plus four runnable public API example checks.
 
 ### Current Limitations
 - **Single Process / Local Host:** JobQ currently coordinates jobs within a single process. It does not provide distributed queue coordination across multiple independent server processes or network clusters.

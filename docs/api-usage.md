@@ -2,11 +2,145 @@
 
 This guide demonstrates how to embed and use JobQ within your own modern C++20 applications. All examples use actual types and function signatures from the JobQ headers.
 
+## Public Engine API
+
+Include `jobq/Engine.h` and link to `JobQ::JobQ` (`jobq_api`). This static library
+owns the high-level API implementation and links publicly to `JobQ::Core`
+(`jobq_core`). The Engine implementation privately owns a queue, executor,
+manager, metrics collector, and worker pool. The existing lower-level interfaces
+remain available through the core target.
+
+For a source checkout embedded in an application's build, use the following CMake setup.
+
+```cmake
+cmake_minimum_required(VERSION 3.20)
+project(MyApplication LANGUAGES CXX)
+add_subdirectory(path/to/JobQ jobq-build EXCLUDE_FROM_ALL)
+add_executable(my_application main.cpp)
+target_link_libraries(my_application PRIVATE JobQ::JobQ)
+```
+
+The high-level API has four public headers, `jobq/Engine.h`, `jobq/EngineConfig.h`,
+`jobq/JobOptions.h`, and generated `jobq/Version.h`. `Engine.h` includes the
+configuration and options headers. Include `Version.h` explicitly for compile-time
+version values and see the [compatibility policy](versioning.md) for upgrade guidance.
+`JobId` is a 64-bit unsigned identifier. `JobHandler` is
+`std::function<void(const Job&)>`, matching the existing core signature. Payloads
+are `std::string` values. Submission accepts strings by value and moves them into
+the core, so callers can move an owned payload. During a handler invocation the
+job reference and its payload remain valid. Copy any data needed beyond that
+invocation.
+
+```cpp
+#include <chrono>
+#include <iostream>
+#include "jobq/Engine.h"
+
+int main() {
+    jobq::Engine engine({.workerCount = 4});
+    engine.registerHandler("EMAIL", [](const jobq::Job& job) {
+        std::cout << "Email to " << job.getPayload() << '\n';
+    });
+    engine.registerHandler("REPORT", [](const jobq::Job& job) {
+        std::cout << "Report " << job.getPayload() << '\n';
+    });
+
+    engine.start();
+    const auto id = engine.submit("EMAIL", "reader@example.com", {
+        .priority = jobq::JobPriority::High,
+        .retryPolicy = {
+            .maxRetries = 2,
+            .initialDelay = std::chrono::milliseconds(100),
+            .multiplier = 2.0,
+            .maxDelay = std::chrono::milliseconds(1000)
+        }
+    });
+    engine.submit("REPORT", "monthly");
+    engine.stop();
+
+    const auto status = engine.getStatus(id);
+    if (status) {
+        std::cout << jobq::toString(*status) << '\n';
+    }
+    std::cout << engine.metrics().completedExecutions << '\n';
+    return status == jobq::JobStatus::Completed ? 0 : 1;
+}
+```
+
+### Configuration and ownership
+
+`EngineConfig` defaults to four workers and in-memory operation. `workerCount`
+must be positive. Set `storagePath` to a journal file to use the existing
+`FileJobStorage` persistence and recovery behavior.
+
+```cpp
+jobq::Engine engine({
+    .workerCount = 2,
+    .storagePath = "data/application.journal"
+});
+```
+
+Construction loads the journal and restores job status. Register handlers for
+recovered job types before calling `start()`. Pending recovered work starts with
+the worker pool. A recovered type with no registered handler follows the core's
+execution failure and retry policy. Recovered work contributes to execution
+metrics, while `submittedJobs` counts new submissions made through this engine.
+Journal errors propagate from construction or submission.
+
+The Engine owns its components and stored callable copies. It is neither copyable
+nor movable. Captured references must outlive all handler invocations. Shared
+captures can own resources needed by handlers. Keep the Engine's owner outside
+its handlers, and finish concurrent member calls before destroying it. Destroying
+an Engine in one of its own handlers cannot join that worker and terminates the
+process. A destructor shutdown error also terminates, following its `noexcept`
+contract. Use an explicit external `stop()` when shutdown errors must be caught.
+
+### Lifecycle and errors
+
+| Operation | Behavior |
+|---|---|
+| Construction | Creates components and loads configured storage. Workers wait for `start()`. |
+| `registerHandler(type, handler)` | Allowed before startup. Empty types/callables and duplicate types throw `std::invalid_argument`. |
+| `start()` | Starts workers once. Repeated startup and startup after shutdown throw `std::logic_error`. Startup failure closes the engine and propagates the error. |
+| `submit(type, payload, options)` | Requires a running engine. Returns a `JobId`. Unknown types throw `std::invalid_argument` before creating a job. |
+| `stop()` | Closes submissions, drains accepted jobs and scheduled retries, and joins workers. Repeated and concurrent calls are safe. |
+| `stop()` before `start()` | Closes the engine. Recovered queued work remains in the journal for future recovery. |
+| Destruction | Calls `stop()` and releases owned components and callables after worker cleanup. |
+| `getStatus(id)` | Returns `std::optional<JobStatus>`, empty for an unknown ID. Available before startup and after shutdown. |
+| `metrics()` | Returns a consistent `JobMetricsSnapshot` using the existing core semantics. |
+| `isRunning()` | Reports whether startup completed and shutdown has not begun. |
+
+Registration during or after startup and submission before startup or during/after
+shutdown throw `std::logic_error`. The core validates priority and retry options
+and propagates `std::invalid_argument` for invalid values. Handlers may run before
+`start()` returns when recovery queued work. Submissions require completed
+startup. Concurrent startup/shutdown is coordinated by the Engine.
+
+Handlers can query status and metrics and submit further jobs while the engine
+runs. Calling `stop()` from the same Engine's handler throws `std::logic_error`
+before it can wait for its own worker. During external shutdown, new submissions
+from handlers are rejected along with other submissions. Shutdown waits for
+handlers to return, including their configured retry attempts and delays.
+
+Handler exceptions use the existing worker isolation and retry behavior.
+Inspect final status and failed/retry execution counters to observe outcomes.
+The core's worker diagnostics continue to report execution and persistence
+failures. Status can reach a terminal state before the worker's final metrics
+update. After `stop()` returns, worker execution and metrics updates are drained.
+
+The API adds no cancellation, restart, distributed coordination, or ABI-versioning
+contract. It retains the core's in-process scheduling and journal semantics.
+Registered jobs remain in the manager's registry for the Engine's lifetime.
+
+Build and run the standalone example using `cmake --build build --target
+jobq_public_api_example` and `./build/jobq_public_api_example.exe` on Windows.
+The example target links to `JobQ::API` and compiles its own application source.
+
 ---
 
-## 1. Quick Start: Queue, Handlers, and Workers
+## 1. Lower-level Queue, Handlers, and Workers
 
-The minimal setup requires a `JobQueue`, a `JobExecutor`, and a `WorkerPool`:
+For direct control of the lower-level components, construct a `JobQueue`, a `JobExecutor`, and a `WorkerPool`:
 
 ```cpp
 #include <iostream>
