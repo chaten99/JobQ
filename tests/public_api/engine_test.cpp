@@ -17,8 +17,8 @@
 #include <vector>
 
 #include "jobq/Engine.h"
-#include "helpers/TemporaryDirectory.h"
-#include "helpers/TestSupport.h"
+#include "../helpers/TemporaryDirectory.h"
+#include "../helpers/TestSupport.h"
 #include "storage/JobRecord.h"
 
 namespace {

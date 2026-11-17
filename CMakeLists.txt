@@ -110,11 +110,18 @@ export(EXPORT JobQTargets
     NAMESPACE JobQ::
 )
 
-add_executable(jobq_public_api_example
-    examples/public_api_example.cpp
-)
+option(JOBQ_BUILD_EXAMPLES "Build JobQ developer examples" ON)
 
-target_link_libraries(jobq_public_api_example PRIVATE JobQ::API)
+if(JOBQ_BUILD_EXAMPLES)
+    add_executable(jobq_public_api_example examples/public_api_example.cpp)
+    target_link_libraries(jobq_public_api_example PRIVATE JobQ::JobQ)
+
+    foreach(example IN ITEMS basic-usage multiple-handlers job-options error-handling)
+        string(REPLACE "-" "_" example_name "${example}")
+        add_executable(jobq_example_${example_name} examples/${example}/main.cpp)
+        target_link_libraries(jobq_example_${example_name} PRIVATE JobQ::JobQ)
+    endforeach()
+endif()
 
 add_executable(jobq
     src/main.cpp
@@ -159,7 +166,7 @@ include(CTest)
 if(BUILD_TESTING)
 
     add_executable(jobq_public_api_test
-        tests/public_api_test.cpp
+        tests/public_api/engine_test.cpp
     )
 
     target_link_libraries(jobq_public_api_test PRIVATE JobQ::API)
@@ -170,6 +177,18 @@ if(BUILD_TESTING)
     )
 
     set_tests_properties(jobq_public_api PROPERTIES TIMEOUT 30)
+
+    add_executable(jobq_public_api_edge_test tests/public_api/edge_cases_test.cpp)
+    target_link_libraries(jobq_public_api_edge_test PRIVATE JobQ::JobQ)
+    add_test(NAME jobq_public_api_edge_cases COMMAND jobq_public_api_edge_test)
+    set_tests_properties(jobq_public_api_edge_cases PROPERTIES TIMEOUT 30)
+
+    if(JOBQ_BUILD_EXAMPLES)
+        foreach(example IN ITEMS basic_usage multiple_handlers job_options error_handling)
+            add_test(NAME jobq_example_${example} COMMAND jobq_example_${example})
+            set_tests_properties(jobq_example_${example} PROPERTIES TIMEOUT 15)
+        endforeach()
+    endif()
 
     add_executable(jobq_core_usage_test
         tests/core_library_usage_test.cpp

@@ -16,7 +16,7 @@ Conceptually inspired by task processing systems like Celery and BullMQ, JobQ br
 - **Crash Recovery:** Startup recovery pipeline reconciling latest job states and automatically re-enqueuing interrupted and pending tasks.
 - **Multi-Command CLI:** Full-featured command-line tool (`jobq_cli`) supporting `submit`, `list`, `status`, `run`, and `metrics` commands.
 - **Metrics & Observability:** Thread-safe execution counters, monotonic latency measurements (`steady_clock`), real-time throughput calculations, and Schema Version 1 structured JSON export.
-- **Comprehensive Testing:** 30 automated test suites integrated with CTest, including multi-threaded concurrency proofs using `std::latch`.
+- **Comprehensive Testing:** 31 automated test suites and four public API example checks integrated with CTest, including multi-threaded concurrency proofs using `std::latch`.
 
 ---
 
@@ -85,7 +85,7 @@ cmake --build build
 ```powershell
 ctest --test-dir build --output-on-failure
 ```
-All 30 automated test suites should pass cleanly.
+With examples enabled, all 35 CTest entries should pass cleanly.
 
 ---
 
@@ -117,6 +117,14 @@ starting, submit while running, and call `stop()` to drain work and join workers
 Destruction also stops the engine. The executable `jobq_public_api_example`
 demonstrates the public interface. Configuration, retries, persistence, lifecycle,
 and error behavior are covered in the [C++ API guide](docs/api-usage.md).
+
+Practical examples under `examples/basic-usage`, `multiple-handlers`,
+`job-options`, and `error-handling` demonstrate handler routing, payloads,
+priority/retries, completion synchronization, and application-side error handling.
+They build by default and can be disabled with `-DJOBQ_BUILD_EXAMPLES=OFF`.
+Run them with `ctest --test-dir build -R jobq_example --output-on-failure`.
+Public API suites live under `tests/public_api`. See the
+[examples guide](docs/examples.md) for target names, usage, and installed consumers.
 
 ## Reusable Core Library
 
@@ -303,7 +311,7 @@ queue/                  # JobQueue priority queue and delayed retries
 storage/                # FileJobStorage and JobRecord
 worker/                 # Worker thread and WorkerPool
 src/                        # Implementations and main entry points
-tests/                      # 30 standalone automated test drivers
+tests/                      # Automated test drivers and package consumer
 examples/                   # Stress test and concurrency benchmark programs
 ```
 
@@ -342,7 +350,7 @@ Detailed technical documentation is available in the [`docs/`](docs/README.md) d
 - Fully functioning in-process background job processing engine.
 - Single-host file journal persistence and crash recovery.
 - Multi-command CLI and Schema v1 JSON runtime metrics.
-- 30/30 passing automated CTest test suites.
+- 31 automated test suites plus four runnable public API example checks.
 
 ### Current Limitations
 - **Single Process / Local Host:** JobQ currently coordinates jobs within a single process. It does not provide distributed queue coordination across multiple independent server processes or network clusters.
