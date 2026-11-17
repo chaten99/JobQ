@@ -11,6 +11,12 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(Threads REQUIRED)
 
+configure_file(
+    cmake/Version.h.in
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/include/jobq/Version.h"
+    @ONLY
+)
+
 add_library(jobq_core STATIC
     src/job/Job.cpp
     src/queue/JobQueue.cpp
@@ -28,10 +34,11 @@ add_library(jobq_core STATIC
 
 add_library(JobQ::Core ALIAS jobq_core)
 
-set_target_properties(jobq_core PROPERTIES EXPORT_NAME Core)
+set_target_properties(jobq_core PROPERTIES EXPORT_NAME Core VERSION ${PROJECT_VERSION})
 
 target_include_directories(jobq_core PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/generated/include>
     $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
@@ -45,7 +52,7 @@ add_library(jobq_api STATIC
 add_library(JobQ::API ALIAS jobq_api)
 add_library(JobQ::JobQ ALIAS jobq_api)
 
-set_target_properties(jobq_api PROPERTIES EXPORT_NAME JobQ)
+set_target_properties(jobq_api PROPERTIES EXPORT_NAME JobQ VERSION ${PROJECT_VERSION})
 
 target_link_libraries(jobq_api PUBLIC JobQ::Core)
 
@@ -85,6 +92,10 @@ install(DIRECTORY
     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
     FILES_MATCHING PATTERN "*.h"
     PATTERN "MeasuredLock.h" EXCLUDE
+)
+
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/generated/include/jobq/Version.h"
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/jobq
 )
 
 configure_package_config_file(
@@ -164,6 +175,28 @@ target_link_libraries(jobq_cli PRIVATE JobQ::Core)
 include(CTest)
 
 if(BUILD_TESTING)
+
+    add_executable(jobq_version_test tests/version_consumer/main.cpp)
+    target_link_libraries(jobq_version_test PRIVATE JobQ::JobQ)
+    target_compile_definitions(jobq_version_test PRIVATE
+        JOBQ_EXPECTED_MAJOR=${PROJECT_VERSION_MAJOR}
+        JOBQ_EXPECTED_MINOR=${PROJECT_VERSION_MINOR}
+        JOBQ_EXPECTED_PATCH=${PROJECT_VERSION_PATCH}
+        JOBQ_EXPECTED_STRING="${PROJECT_VERSION}"
+    )
+    add_test(NAME jobq_version COMMAND jobq_version_test)
+
+    add_test(NAME jobq_package_version_compatibility
+        COMMAND ${CMAKE_COMMAND}
+            "-DJOBQ_PACKAGE_DIR=${JOBQ_BUILD_PACKAGE_DIR}"
+            "-DJOBQ_TEST_BINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}/version-consumers"
+            "-DJOBQ_TEST_GENERATOR=${CMAKE_GENERATOR}"
+            "-DJOBQ_TEST_COMPILER=${CMAKE_CXX_COMPILER}"
+            "-DJOBQ_TEST_CONFIG=$<CONFIG>"
+            "-DJOBQ_TEST_VERSION=${PROJECT_VERSION}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cmake/package_version_test.cmake"
+    )
+    set_tests_properties(jobq_package_version_compatibility PROPERTIES TIMEOUT 120)
 
     add_executable(jobq_public_api_test
         tests/public_api/engine_test.cpp

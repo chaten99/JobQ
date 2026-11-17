@@ -55,6 +55,13 @@ line are compatible when the requested patch is available. `EXACT` requests
 require a matching version. The initial `0.1.0` version identifies development
 metadata and establishes no stable major-release or ABI guarantee.
 
+The public `jobq/Version.h` header is generated from the project version and
+installed alongside the other `jobq` headers. `jobq::version` exposes compile-time
+numeric values and a string view. The package also publishes `JobQ_VERSION`
+and its major, minor, and patch components. See the
+[versioning policy](versioning.md) for source compatibility, public header
+boundaries, and upgrade guidance.
+
 The build-tree export uses `export(EXPORT JobQTargets ...)` and the installed
 export uses `install(EXPORT JobQTargets ...)`. Both share the export set established
 by the two library installation rules. `configure_package_config_file` generates
@@ -98,7 +105,8 @@ package includes `JobQConfig.cmake`, `JobQConfigVersion.cmake`,
 and CLI executables are built as before; installation delivers the libraries.
 
 The public headers preserve their existing directory layout. `jobq/Engine.h`,
-`jobq/EngineConfig.h`, and `jobq/JobOptions.h` provide the high-level API. The
+`jobq/EngineConfig.h`, `jobq/JobOptions.h`, and generated `jobq/Version.h` provide
+the high-level API. The
 `job`, `queue`, `executor`, `worker`, `manager`, `storage`, and public `metrics`
 headers support `JobQ::Core` consumers and the API's existing value types.
 CLI headers and `metrics/MeasuredLock.h` are excluded from installation.
