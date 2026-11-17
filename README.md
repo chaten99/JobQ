@@ -135,9 +135,13 @@ The consumer uses `find_package(JobQ 0.1 CONFIG REQUIRED)` and links to
 `JobQ::JobQ` for the public Engine API or `JobQ::Core` for lower-level components.
 `JobQ::API` remains a compatibility alias. Package files are generated under
 `<build-directory>/cmake/JobQ`. This support references the original source and
-build trees, which must remain available. Installation and package-manager
-distribution are future work. See the [CMake package guide](docs/cmake-packaging.md)
-for usage and version compatibility.
+build trees, which must remain available. For a relocatable installed package,
+use `cmake --install build --prefix <prefix>` and configure the consumer with
+`-DCMAKE_PREFIX_PATH=<prefix>`. Libraries, public headers, and CMake package
+metadata are installed using `GNUInstallDirs`. The separate
+`examples/installed-consumer` project exercises this workflow.
+See the [CMake package guide](docs/cmake-packaging.md) for installation commands,
+header coverage, relocation, and version compatibility.
 
 The `jobq_core` static library contains the job-processing engine, persistence,
 metrics, and latency/contention support. The application, CLI, benchmarks, and
