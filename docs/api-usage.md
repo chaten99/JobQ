@@ -20,8 +20,10 @@ add_executable(my_application main.cpp)
 target_link_libraries(my_application PRIVATE JobQ::JobQ)
 ```
 
-The API has three public headers, `jobq/Engine.h`, `jobq/EngineConfig.h`, and
-`jobq/JobOptions.h`. `Engine.h` includes the configuration and options headers.
+The high-level API has four public headers, `jobq/Engine.h`, `jobq/EngineConfig.h`,
+`jobq/JobOptions.h`, and generated `jobq/Version.h`. `Engine.h` includes the
+configuration and options headers. Include `Version.h` explicitly for compile-time
+version values and see the [compatibility policy](versioning.md) for upgrade guidance.
 `JobId` is a 64-bit unsigned identifier. `JobHandler` is
 `std::function<void(const Job&)>`, matching the existing core signature. Payloads
 are `std::string` values. Submission accepts strings by value and moves them into

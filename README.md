@@ -16,7 +16,7 @@ Conceptually inspired by task processing systems like Celery and BullMQ, JobQ br
 - **Crash Recovery:** Startup recovery pipeline reconciling latest job states and automatically re-enqueuing interrupted and pending tasks.
 - **Multi-Command CLI:** Full-featured command-line tool (`jobq_cli`) supporting `submit`, `list`, `status`, `run`, and `metrics` commands.
 - **Metrics & Observability:** Thread-safe execution counters, monotonic latency measurements (`steady_clock`), real-time throughput calculations, and Schema Version 1 structured JSON export.
-- **Comprehensive Testing:** 31 automated test suites and four public API example checks integrated with CTest, including multi-threaded concurrency proofs using `std::latch`.
+- **Comprehensive Testing:** 33 automated test suites and four public API example checks integrated with CTest, including multi-threaded concurrency proofs using `std::latch`.
 
 ---
 
@@ -85,7 +85,7 @@ cmake --build build
 ```powershell
 ctest --test-dir build --output-on-failure
 ```
-With examples enabled, all 35 CTest entries should pass cleanly.
+With examples enabled, all 37 CTest entries should pass cleanly.
 
 ---
 
@@ -127,6 +127,18 @@ Public API suites live under `tests/public_api`. See the
 [examples guide](docs/examples.md) for target names, usage, and installed consumers.
 
 ## Reusable Core Library
+
+### Versioning and compatibility
+
+The current development version is `0.1.0`, defined by the root CMake project.
+Include `jobq/Version.h` to read `jobq::version::major`, `minor`, `patch`, and
+`string` as compile-time values. The generated header is available to build-tree
+and installed consumers. Packages use same-minor compatibility during pre-1.0
+development. Patch releases aim to preserve source compatibility within the
+minor line; minor releases may contain documented breaking changes.
+Consumers should rebuild and test when upgrading. See the
+[versioning policy](docs/versioning.md) for public interface boundaries,
+deprecation expectations, CMake selection rules, and ABI limitations.
 
 JobQ also generates a build-tree CMake package named `JobQ`, version `0.1.0`.
 Build the libraries, then point a separate consumer at the generated directory.
@@ -350,7 +362,7 @@ Detailed technical documentation is available in the [`docs/`](docs/README.md) d
 - Fully functioning in-process background job processing engine.
 - Single-host file journal persistence and crash recovery.
 - Multi-command CLI and Schema v1 JSON runtime metrics.
-- 31 automated test suites plus four runnable public API example checks.
+- 33 automated test suites plus four runnable public API example checks.
 
 ### Current Limitations
 - **Single Process / Local Host:** JobQ currently coordinates jobs within a single process. It does not provide distributed queue coordination across multiple independent server processes or network clusters.
