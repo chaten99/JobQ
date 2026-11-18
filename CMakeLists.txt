@@ -164,17 +164,40 @@ add_executable(jobq_contention_benchmark
 
 target_link_libraries(jobq_contention_benchmark PRIVATE JobQ::Core)
 
+add_library(jobq_cli_runtime STATIC
+    src/cli/InteractiveCommand.cpp
+    src/cli/CommandDispatcher.cpp
+    src/cli/InteractiveRuntime.cpp
+)
+
+target_link_libraries(jobq_cli_runtime PUBLIC JobQ::JobQ)
+
 add_executable(jobq_cli
     src/cli/main.cpp
     src/cli/CommandLine.cpp
     src/cli/CommandHandlers.cpp
 )
 
-target_link_libraries(jobq_cli PRIVATE JobQ::Core)
+target_link_libraries(jobq_cli PRIVATE jobq_cli_runtime)
 
 include(CTest)
 
 if(BUILD_TESTING)
+
+    foreach(component IN ITEMS parser dispatcher runtime)
+        add_executable(jobq_interactive_${component}_test tests/interactive_${component}_test.cpp)
+        target_link_libraries(jobq_interactive_${component}_test PRIVATE jobq_cli_runtime)
+        add_test(NAME jobq_interactive_${component} COMMAND jobq_interactive_${component}_test)
+        set_tests_properties(jobq_interactive_${component} PROPERTIES TIMEOUT 20)
+    endforeach()
+
+    add_test(NAME jobq_interactive_session
+        COMMAND ${CMAKE_COMMAND}
+            "-DJOBQ_CLI=$<TARGET_FILE:jobq_cli>"
+            "-DJOBQ_SESSION_TEST_DIR=${CMAKE_CURRENT_BINARY_DIR}/interactive-sessions"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/cmake/interactive_cli_session_test.cmake"
+    )
+    set_tests_properties(jobq_interactive_session PROPERTIES TIMEOUT 70)
 
     add_executable(jobq_version_test tests/version_consumer/main.cpp)
     target_link_libraries(jobq_version_test PRIVATE JobQ::JobQ)

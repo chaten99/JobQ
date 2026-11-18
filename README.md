@@ -16,7 +16,7 @@ Conceptually inspired by task processing systems like Celery and BullMQ, JobQ br
 - **Crash Recovery:** Startup recovery pipeline reconciling latest job states and automatically re-enqueuing interrupted and pending tasks.
 - **Multi-Command CLI:** Full-featured command-line tool (`jobq_cli`) supporting `submit`, `list`, `status`, `run`, and `metrics` commands.
 - **Metrics & Observability:** Thread-safe execution counters, monotonic latency measurements (`steady_clock`), real-time throughput calculations, and Schema Version 1 structured JSON export.
-- **Comprehensive Testing:** 33 automated test suites and four public API example checks integrated with CTest, including multi-threaded concurrency proofs using `std::latch`.
+- **Comprehensive Testing:** 37 automated test suites and four public API example checks integrated with CTest, including multi-threaded concurrency proofs using `std::latch`.
 
 ---
 
@@ -85,7 +85,7 @@ cmake --build build
 ```powershell
 ctest --test-dir build --output-on-failure
 ```
-With examples enabled, all 37 CTest entries should pass cleanly.
+With examples enabled, all 41 CTest entries should pass cleanly.
 
 ---
 
@@ -192,6 +192,25 @@ executor, metrics, and worker pool and verifies completed jobs and accounting.
 ## CLI Usage
 
 The CLI executable is located at `build/jobq_cli.exe`.
+
+### Interactive Session
+
+```powershell
+.\build\jobq_cli.exe interactive
+```
+
+This starts one Engine and keeps it running while commands are entered at
+`jobq>`. The available commands are `help`, `exit`, and its alias `quit`.
+Empty input is ignored. Unknown commands and invalid arguments report an error
+and leave the session running. Exit or EOF drains the Engine and joins workers.
+Use `jobq_cli interactive --help` for invocation help.
+
+The session currently uses the default in-memory Engine configuration and
+registers no job handlers. Interactive submission, inspection, metrics, and
+runtime management commands are planned additions. The existing argument-based
+commands below operate as one-shot commands. Launching without a command retains
+the existing usage error, and `jobq` remains the separate demonstration executable.
+See the [CLI guide](docs/cli-reference.md) for input syntax and runtime behavior.
 
 ### Submit a Job
 ```powershell
@@ -362,7 +381,7 @@ Detailed technical documentation is available in the [`docs/`](docs/README.md) d
 - Fully functioning in-process background job processing engine.
 - Single-host file journal persistence and crash recovery.
 - Multi-command CLI and Schema v1 JSON runtime metrics.
-- 33 automated test suites plus four runnable public API example checks.
+- 37 automated test suites plus four runnable public API example checks.
 
 ### Current Limitations
 - **Single Process / Local Host:** JobQ currently coordinates jobs within a single process. It does not provide distributed queue coordination across multiple independent server processes or network clusters.

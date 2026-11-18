@@ -2,6 +2,94 @@
 
 `jobq_cli` is the command-line interface for the JobQ engine. It allows users to submit tasks, inspect job registries, execute worker pools from persistent storage, and export runtime metrics.
 
+## Interactive runtime
+
+Launch a persistent terminal session with the explicit interactive command.
+
+```powershell
+.\build\jobq_cli.exe interactive
+```
+
+The explicit entry point preserves the existing missing-command usage error.
+The `jobq` executable remains the lifecycle demonstration. `jobq_cli --help`
+lists one-shot commands and the interactive entry point, while
+`jobq_cli interactive --help` prints interactive invocation help without starting
+workers. The interactive invocation accepts no other command-line arguments.
+
+```text
+JobQ Interactive Runtime
+Engine initialized successfully.
+Runtime started.
+jobq> help
+Available commands:
+  exit  Stop the runtime and exit.
+  help  Display available commands.
+  quit  Alias for exit.
+jobq> exit
+Shutting down JobQ...
+Runtime stopped.
+```
+
+The Engine may emit its existing worker-stop diagnostics during shutdown.
+Initialization and startup messages follow the operations they report. If
+construction or startup fails, the runtime reports an error, returns exit code 1,
+and does not enter a partially initialized command loop. One session owns one
+Engine for its entire lifetime. Its default configuration is four workers with
+in-memory storage. This foundation registers no handlers or demonstration jobs.
+Session persistence means the same Engine stays alive across terminal commands.
+
+### Available session commands
+
+| Command | Effect |
+|---|---|
+| `help` | Lists the registered commands and their usage. |
+| `exit` | Leaves the command loop and shuts down the Engine. |
+| `quit` | Performs the same action as `exit`. |
+
+These commands accept no arguments. Empty or whitespace-only lines are ignored.
+Unknown names, malformed input, and command errors are reported on stderr, and
+the next prompt remains available. Names are case-sensitive. A session that
+handles command errors and then exits cleanly returns 0. Terminal I/O, startup,
+or shutdown failures return 1. Invalid invocation arguments return 2.
+
+EOF follows the same graceful shutdown path as exit. For an ordinary Windows
+console this is typically Ctrl+Z followed by Enter; Unix-style terminals commonly
+use Ctrl+D. Piped input is supported. Input is read one line at a time with
+standard streams. Stream failures report an error and trigger cleanup. Only the
+first exit request is processed; any remaining piped lines are left unread.
+The existing Engine destructor provides its normal idempotent shutdown backstop.
+
+### Input grammar
+
+The parser splits a line into a command name and an ordered argument list.
+Whitespace separates tokens, single or double quotes group text, and empty
+quoted arguments are preserved. Adjacent quoted/unquoted fragments concatenate
+into one argument. Inside a quoted fragment, the other quote character is literal.
+Backslashes are always literal, including in Windows paths. Escape sequences,
+variable expansion, shell pipelines, and command chaining are unsupported.
+Unclosed quotes, non-whitespace control characters, and an empty quoted command name are errors.
+Option-shaped tokens such as `--format` are ordinary ordered arguments at this
+layer; individual future commands will validate their accepted options.
+
+### Runtime architecture and scope
+
+`InteractiveCommand` parses terminal input without touching the Engine.
+`CommandDispatcher` maps registered names to callables and generates help from
+that registry. `InteractiveRuntime` owns an Engine, registers the built-in
+commands, runs the input loop, reports failures, and coordinates shutdown.
+Terminal streams are supplied to `run()` for deterministic testing. Its internal
+CLI extension points let future command handlers access that same Engine.
+Runtime and registry operations are used on the session thread. A runtime object
+supports one call to `run()` and cannot restart its Engine.
+
+The CLI runtime is built separately from the public library and uses `JobQ::JobQ`.
+Its CLI headers are excluded from installation. Existing one-shot handlers retain
+their established core integration. Interactive queue/worker inspection, job
+submission and monitoring, metrics, and advanced lifecycle/signal handling will
+be added incrementally. Their names are not advertised as working session commands.
+The one-shot `status`, `submit`, `run`, and other operations below remain
+argument-based commands and are unavailable inside this initial session.
+
 ---
 
 ## 1. Syntax & Global Options
@@ -15,10 +103,14 @@ jobq_cli <command> [arguments...] [options...]
 
 ### Exit Codes
 - `0`: Successful execution.
-- `1`: Invalid command arguments, unknown options, job not found, or command execution error.
+- `1`: Command execution, runtime I/O, startup/shutdown error, or job not found.
+- `2`: Invalid invocation, command arguments, or options.
 
 ### Architecture Note
-`jobq_cli` follows a **one-command-per-process** model. Commands operate against the specified `--storage` journal file. In-memory runtime metrics are collected and reported during the lifetime of the `run` command.
+The existing argument-based operations follow a **one-command-per-process** model.
+They operate against the specified `--storage` journal file. In-memory runtime
+metrics are collected and reported during the lifetime of the one-shot `run`
+command. `jobq_cli interactive` starts the persistent session described above.
 
 ---
 
