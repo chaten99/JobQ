@@ -22,9 +22,12 @@ Engine initialized successfully.
 Runtime started.
 jobq> help
 Available commands:
-  exit  Stop the runtime and exit.
-  help  Display available commands.
-  quit  Alias for exit.
+  exit            Stop the runtime and exit.
+  help [command]  Display available commands.
+  queue           Display waiting jobs and execution counters.
+  quit            Alias for exit.
+  status          Display runtime status.
+  workers         Display worker pool information.
 jobq> exit
 Shutting down JobQ...
 Runtime stopped.
@@ -42,11 +45,17 @@ Session persistence means the same Engine stays alive across terminal commands.
 
 | Command | Effect |
 |---|---|
-| `help` | Lists the registered commands and their usage. |
+| `help [command]` | Lists the registry, or displays usage for one registered command. |
+| `status` | Reports runtime and Engine states, configured workers, submitted jobs, and uptime. |
+| `workers` | Reports worker pool state and configured worker count. |
+| `queue` | Reports waiting queue entries and historical execution counters. |
 | `exit` | Leaves the command loop and shuts down the Engine. |
 | `quit` | Performs the same action as `exit`. |
 
-These commands accept no arguments. Empty or whitespace-only lines are ignored.
+Only `help` accepts an optional command name, such as `help status`,
+`help workers`, or `help queue`. Other session commands accept no arguments.
+Invalid inspection arguments and unknown help topics display usage errors.
+Empty or whitespace-only lines are ignored.
 Unknown names, malformed input, and command errors are reported on stderr, and
 the next prompt remains available. Names are case-sensitive. A session that
 handles command errors and then exits cleanly returns 0. Terminal I/O, startup,
@@ -58,6 +67,45 @@ use Ctrl+D. Piped input is supported. Input is read one line at a time with
 standard streams. Stream failures report an error and trigger cleanup. Only the
 first exit request is processed; any remaining piped lines are left unread.
 The existing Engine destructor provides its normal idempotent shutdown backstop.
+
+### Inspection fields and consistency
+
+`status` reports runtime lifecycle separately from Engine lifecycle. Both expose
+Created, Starting, Running, Stopping, and Stopped states; the runtime can also
+report Failed after startup or shutdown failure. Before Engine construction,
+Engine information is Unavailable. Uptime uses the runtime's steady clock from
+successful startup, freezes after cleanup, and displays as hours:minutes:seconds.
+It is Unavailable before successful startup.
+
+`workers` reads the pool's lifecycle flags and configured worker count. This
+count describes configuration rather than live or active threads. Active/idle
+counts and per-worker identifiers or states are Unavailable. Engine configuration
+rejects zero workers.
+
+`queue` distinguishes current waiting entries from historical execution counters:
+
+| Field | Meaning |
+|---|---|
+| Queue state | Whether the queue is open or closed to new entries. |
+| Ready waiting | Entries in the ready priority queue. |
+| Retry waiting | Entries in the delayed retry heap. |
+| Waiting total | Sum of both counts from the same queue snapshot. |
+| Completed executions | Historical successful execution attempts. |
+| Failed executions | Historical failed execution attempts, including attempts later retried. |
+
+Workers remove entries before execution, so waiting counts exclude active work.
+A due retry remains in the retry heap until normal queue retrieval promotes it.
+Inspection never promotes, removes, or reschedules entries. Execution counters
+are neither current queue depth nor counts of distinct jobs. Queue capacity and
+active execution counts are omitted because the implementation exposes no such
+queue statistics.
+
+`Engine::snapshot()`, `WorkerPool::snapshot()`, and `JobQueue::snapshot()` return
+value copies under their existing component locks. Runtime lifecycle and uptime
+are also synchronized. Formatting happens after locks are released. A combined
+report samples components at nearby instants; it is not a globally atomic view.
+Snapshots remain available after shutdown while the owning runtime exists.
+Callers must finish concurrent inspection before destroying that owner.
 
 ### Input grammar
 
@@ -79,16 +127,18 @@ that registry. `InteractiveRuntime` owns an Engine, registers the built-in
 commands, runs the input loop, reports failures, and coordinates shutdown.
 Terminal streams are supplied to `run()` for deterministic testing. Its internal
 CLI extension points let future command handlers access that same Engine.
-Runtime and registry operations are used on the session thread. A runtime object
+Registry operations are used on the session thread. Runtime snapshots can also
+be read concurrently with execution and shutdown. A runtime object
 supports one call to `run()` and cannot restart its Engine.
 
 The CLI runtime is built separately from the public library and uses `JobQ::JobQ`.
 Its CLI headers are excluded from installation. Existing one-shot handlers retain
-their established core integration. Interactive queue/worker inspection, job
-submission and monitoring, metrics, and advanced lifecycle/signal handling will
+their established core integration. Interactive job submission and inspection,
+metrics, and advanced lifecycle/signal handling will
 be added incrementally. Their names are not advertised as working session commands.
-The one-shot `status`, `submit`, `run`, and other operations below remain
-argument-based commands and are unavailable inside this initial session.
+The one-shot operations below retain their argument-based behavior. In particular,
+one-shot `status JOB_ID` inspects a stored job, while session `status` takes no
+arguments and inspects the running runtime. Session submission is still unavailable.
 
 ---
 

@@ -20,9 +20,10 @@ add_executable(my_application main.cpp)
 target_link_libraries(my_application PRIVATE JobQ::JobQ)
 ```
 
-The high-level API has four public headers, `jobq/Engine.h`, `jobq/EngineConfig.h`,
-`jobq/JobOptions.h`, and generated `jobq/Version.h`. `Engine.h` includes the
-configuration and options headers. Include `Version.h` explicitly for compile-time
+The high-level API has five public headers, `jobq/Engine.h`, `jobq/EngineConfig.h`,
+`jobq/EngineSnapshot.h`, `jobq/JobOptions.h`, and generated `jobq/Version.h`.
+`Engine.h` includes the configuration, snapshot, and options headers.
+Include `Version.h` explicitly for compile-time
 version values and see the [compatibility policy](versioning.md) for upgrade guidance.
 `JobId` is a 64-bit unsigned identifier. `JobHandler` is
 `std::function<void(const Job&)>`, matching the existing core signature. Payloads
@@ -30,6 +31,16 @@ are `std::string` values. Submission accepts strings by value and moves them int
 the core, so callers can move an owned payload. During a handler invocation the
 job reference and its payload remain valid. Copy any data needed beyond that
 invocation.
+
+`Engine::snapshot()` returns an `EngineSnapshot` value with actual `EngineState`,
+configured worker count, worker lifecycle flags, ready and delayed queue sizes,
+queue closure, and a `JobMetricsSnapshot`. Reads are synchronized separately for
+each component, so a combined snapshot can span nearby instants during concurrent
+execution. Formatting or storing the returned value holds no Engine locks.
+Inspection does not promote delayed retries or change job or worker state.
+Waiting counts exclude active executions; metric counters describe historical
+attempts. Active/idle and individual worker states are not exposed. The Engine
+must remain alive until all concurrent calls finish.
 
 ```cpp
 #include <chrono>

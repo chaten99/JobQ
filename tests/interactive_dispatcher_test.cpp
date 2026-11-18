@@ -55,7 +55,7 @@ int main() {
     output.str("");
     dispatcher.printHelp(output);
     check(output.str().find("inspect  Inspect a test value.") != std::string::npos &&
-          output.str().find("exit  Exit the test.") != std::string::npos &&
+          output.str().find("exit     Exit the test.") != std::string::npos &&
           output.str().find("submit") == std::string::npos,
           "Registry help advertises only registered commands");
     return jobq_test::testsFailed() == 0 ? 0 : 1;

@@ -8,6 +8,7 @@
 #include <utility>
 
 #include "cli/CommandLine.h"
+#include "cli/InspectionCommands.h"
 
 namespace jobq::cli {
 
@@ -30,12 +31,16 @@ InteractiveRuntime::InteractiveRuntime(EngineConfig config)
     : config_(std::move(config)) {
     commands_.registerCommand("help", "Display available commands.",
         [this](const InteractiveCommand& command, std::ostream& output) {
-            requireNoArguments(command);
-            commands_.printHelp(output);
+            if (command.arguments.size() > 1 ||
+                (command.arguments.size() == 1 && command.arguments.front().empty())) {
+                throw std::invalid_argument("Usage: help [command]");
+            }
+            commands_.printHelp(output, command.arguments.empty() ? "" : command.arguments.front());
             return CommandAction::Continue;
-        });
+        }, "help [command]");
     commands_.registerCommand("exit", "Stop the runtime and exit.", requestExit);
     commands_.registerCommand("quit", "Alias for exit.", requestExit);
+    registerInspectionCommands(*this);
 }
 
 CommandDispatcher& InteractiveRuntime::commands() noexcept {
@@ -43,27 +48,67 @@ CommandDispatcher& InteractiveRuntime::commands() noexcept {
 }
 
 Engine& InteractiveRuntime::engine() {
+    std::lock_guard lock(mutex_);
     if (!engine_) {
         throw std::logic_error("Runtime engine has not been initialized");
     }
     return *engine_;
 }
 
-int InteractiveRuntime::run(std::istream& input, std::ostream& output, std::ostream& errorOutput) {
-    if (used_) {
-        errorOutput << "Error: An interactive runtime can only run once.\n";
-        return kCommandErrorExitCode;
+void InteractiveRuntime::setState(RuntimeState state) {
+    std::lock_guard lock(mutex_);
+    state_ = state;
+    if (state == RuntimeState::Running) {
+        startedAt_ = std::chrono::steady_clock::now();
+    } else if ((state == RuntimeState::Stopped || state == RuntimeState::Failed) && startedAt_) {
+        stoppedAt_ = std::chrono::steady_clock::now();
     }
-    used_ = true;
+}
+
+RuntimeSnapshot InteractiveRuntime::snapshot() const {
+    RuntimeSnapshot result;
+    Engine* engine = nullptr;
+    {
+        std::lock_guard lock(mutex_);
+        result.state = state_;
+        engine = engine_.get();
+        if (startedAt_) {
+            result.uptime = std::chrono::duration_cast<std::chrono::nanoseconds>(
+                stoppedAt_.value_or(std::chrono::steady_clock::now()) - *startedAt_
+            );
+        }
+    }
+    if (engine) {
+        result.engine = engine->snapshot();
+    }
+    return result;
+}
+
+int InteractiveRuntime::run(std::istream& input, std::ostream& output, std::ostream& errorOutput) {
+    {
+        std::unique_lock lock(mutex_);
+        if (used_) {
+            lock.unlock();
+            errorOutput << "Error: An interactive runtime can only run once.\n";
+            return kCommandErrorExitCode;
+        }
+        used_ = true;
+        state_ = RuntimeState::Starting;
+    }
 
     bool started = false;
     int result = kSuccessExitCode;
     try {
         output << "JobQ Interactive Runtime\n";
-        engine_ = std::make_unique<Engine>(config_);
+        auto engine = std::make_unique<Engine>(config_);
+        {
+            std::lock_guard lock(mutex_);
+            engine_ = std::move(engine);
+        }
         output << "Engine initialized successfully.\n";
         engine_->start();
         started = true;
+        setState(RuntimeState::Running);
         output << "Runtime started.\n";
         std::string line;
         while (true) {
@@ -106,9 +151,11 @@ int InteractiveRuntime::run(std::istream& input, std::ostream& output, std::ostr
     }
 
     if (!started) {
+        setState(RuntimeState::Failed);
         return result;
     }
 
+    setState(RuntimeState::Stopping);
     try {
         output << "Shutting down JobQ...\n";
     } catch (const std::exception& error) {
@@ -119,10 +166,13 @@ int InteractiveRuntime::run(std::istream& input, std::ostream& output, std::ostr
     try {
         engine_->stop();
         stopped = true;
+        setState(RuntimeState::Stopped);
     } catch (const std::exception& error) {
+        setState(RuntimeState::Failed);
         errorOutput << "Unable to stop runtime: " << error.what() << '\n';
         result = kCommandErrorExitCode;
     } catch (...) {
+        setState(RuntimeState::Failed);
         errorOutput << "Unable to stop runtime: unknown error.\n";
         result = kCommandErrorExitCode;
     }

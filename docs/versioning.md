@@ -56,8 +56,9 @@ guaranteed support period.
 ## Supported source interfaces
 
 The high-level API consists of `jobq/Engine.h`, `jobq/EngineConfig.h`,
-`jobq/JobOptions.h`, and generated `jobq/Version.h`. The supported namespace is
-`jobq`, including Engine, EngineConfig, JobOptions, JobId, JobHandler, and
+`jobq/EngineSnapshot.h`, `jobq/JobOptions.h`, and generated `jobq/Version.h`.
+The supported namespace is
+`jobq`, including Engine, EngineConfig, EngineSnapshot, EngineState, JobOptions, JobId, JobHandler, and
 `jobq::version`. Job, JobPriority, JobStatus, RetryPolicy, and JobMetricsSnapshot
 are existing public value and handler types used by this interface.
 

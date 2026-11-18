@@ -105,7 +105,7 @@ package includes `JobQConfig.cmake`, `JobQConfigVersion.cmake`,
 and CLI executables are built as before; installation delivers the libraries.
 
 The public headers preserve their existing directory layout. `jobq/Engine.h`,
-`jobq/EngineConfig.h`, `jobq/JobOptions.h`, and generated `jobq/Version.h` provide
+`jobq/EngineConfig.h`, `jobq/EngineSnapshot.h`, `jobq/JobOptions.h`, and generated `jobq/Version.h` provide
 the high-level API. The
 `job`, `queue`, `executor`, `worker`, `manager`, `storage`, and public `metrics`
 headers support `JobQ::Core` consumers and the API's existing value types.
