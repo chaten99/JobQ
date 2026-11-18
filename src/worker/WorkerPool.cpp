@@ -187,4 +187,9 @@ bool WorkerPool::isStopped() const {
     return stopped_;
 }
 
+WorkerPoolSnapshot WorkerPool::snapshot() const {
+    std::lock_guard<std::mutex> lock(mutex_);
+    return {workers_.size(), started_, stopping_, stopped_};
+}
+
 } // namespace jobq

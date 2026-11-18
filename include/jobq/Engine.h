@@ -7,6 +7,7 @@
 #include <string>
 
 #include "jobq/EngineConfig.h"
+#include "jobq/EngineSnapshot.h"
 #include "jobq/JobOptions.h"
 #include "metrics/JobMetrics.h"
 
@@ -35,6 +36,8 @@ public:
     std::optional<JobStatus> getStatus(JobId id) const;
     JobMetricsSnapshot metrics() const;
     bool isRunning() const;
+
+    EngineSnapshot snapshot() const;
 
 private:
     struct Impl;

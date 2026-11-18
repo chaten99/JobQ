@@ -185,7 +185,7 @@ std::string usageText() {
         "\n"
         "Commands:\n"
         "  interactive\n"
-        "      Start a persistent session with help, exit, and quit.\n"
+        "      Start a persistent session. Use help to list its commands.\n"
         "\n"
         "  submit --type TYPE --payload PAYLOAD "
         "[--priority PRIORITY] [--retries COUNT] [--storage PATH]\n"

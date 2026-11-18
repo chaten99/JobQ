@@ -168,6 +168,7 @@ add_library(jobq_cli_runtime STATIC
     src/cli/InteractiveCommand.cpp
     src/cli/CommandDispatcher.cpp
     src/cli/InteractiveRuntime.cpp
+    src/cli/InspectionCommands.cpp
 )
 
 target_link_libraries(jobq_cli_runtime PUBLIC JobQ::JobQ)
@@ -183,6 +184,11 @@ target_link_libraries(jobq_cli PRIVATE jobq_cli_runtime)
 include(CTest)
 
 if(BUILD_TESTING)
+
+    add_executable(jobq_cli_inspection_commands_test tests/cli_inspection_commands_test.cpp)
+    target_link_libraries(jobq_cli_inspection_commands_test PRIVATE jobq_cli_runtime)
+    add_test(NAME jobq_cli_inspection_commands COMMAND jobq_cli_inspection_commands_test)
+    set_tests_properties(jobq_cli_inspection_commands PROPERTIES TIMEOUT 30)
 
     foreach(component IN ITEMS parser dispatcher runtime)
         add_executable(jobq_interactive_${component}_test tests/interactive_${component}_test.cpp)
