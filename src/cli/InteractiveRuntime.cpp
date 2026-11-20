@@ -9,6 +9,7 @@
 
 #include "cli/CommandLine.h"
 #include "cli/InspectionCommands.h"
+#include "cli/JobCommands.h"
 
 namespace jobq::cli {
 
@@ -27,8 +28,8 @@ CommandAction requestExit(const InteractiveCommand& command, std::ostream&) {
 
 }
 
-InteractiveRuntime::InteractiveRuntime(EngineConfig config)
-    : config_(std::move(config)) {
+InteractiveRuntime::InteractiveRuntime(EngineConfig config, EngineInitializer initializeEngine)
+    : config_(std::move(config)), initializeEngine_(std::move(initializeEngine)) {
     commands_.registerCommand("help", "Display available commands.",
         [this](const InteractiveCommand& command, std::ostream& output) {
             if (command.arguments.size() > 1 ||
@@ -41,6 +42,7 @@ InteractiveRuntime::InteractiveRuntime(EngineConfig config)
     commands_.registerCommand("exit", "Stop the runtime and exit.", requestExit);
     commands_.registerCommand("quit", "Alias for exit.", requestExit);
     registerInspectionCommands(*this);
+    registerJobCommands(*this);
 }
 
 CommandDispatcher& InteractiveRuntime::commands() noexcept {
@@ -101,6 +103,9 @@ int InteractiveRuntime::run(std::istream& input, std::ostream& output, std::ostr
     try {
         output << "JobQ Interactive Runtime\n";
         auto engine = std::make_unique<Engine>(config_);
+        if (initializeEngine_) {
+            initializeEngine_(*engine);
+        }
         {
             std::lock_guard lock(mutex_);
             engine_ = std::move(engine);

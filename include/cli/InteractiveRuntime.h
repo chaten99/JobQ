@@ -1,6 +1,7 @@
 #pragma once
 
 #include <chrono>
+#include <functional>
 #include <iosfwd>
 #include <memory>
 #include <mutex>
@@ -21,7 +22,9 @@ struct RuntimeSnapshot {
 
 class InteractiveRuntime {
 public:
-    explicit InteractiveRuntime(EngineConfig config = {});
+    using EngineInitializer = std::function<void(Engine&)>;
+
+    explicit InteractiveRuntime(EngineConfig config = {}, EngineInitializer initializeEngine = {});
 
     InteractiveRuntime(const InteractiveRuntime&) = delete;
     InteractiveRuntime& operator=(const InteractiveRuntime&) = delete;
@@ -37,6 +40,7 @@ private:
     void setState(RuntimeState state);
 
     EngineConfig config_;
+    EngineInitializer initializeEngine_;
     CommandDispatcher commands_;
     bool used_{false};
     mutable std::mutex mutex_;

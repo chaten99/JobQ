@@ -60,7 +60,8 @@ The high-level API consists of `jobq/Engine.h`, `jobq/EngineConfig.h`,
 The supported namespace is
 `jobq`, including Engine, EngineConfig, EngineSnapshot, EngineState, JobOptions, JobId, JobHandler, and
 `jobq::version`. Job, JobPriority, JobStatus, RetryPolicy, and JobMetricsSnapshot
-are existing public value and handler types used by this interface.
+are existing public value and handler types used by this interface. `JobSnapshot`
+is the public value type returned by `Engine::getJob` and `Engine::listJobs`.
 
 `JobQ::Core` also exposes the installed lower-level headers under `job`, `queue`,
 `executor`, `worker`, `manager`, `storage`, and public `metrics`. Their callable
