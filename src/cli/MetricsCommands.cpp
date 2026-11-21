@@ -10,6 +10,7 @@
 #include <string_view>
 #include <system_error>
 #include <thread>
+#include <utility>
 
 #include "cli/InteractiveRuntime.h"
 
@@ -159,6 +160,11 @@ void printInteractiveMetrics(const JobMetricsSnapshot& snapshot, std::ostream& o
 
 void monitorMetrics(Engine& engine, MonitorOptions options, std::ostream& output, MonitorTiming timing) {
     validateOptions(options);
+    if (timing.cancelled && timing.cancelled()) {
+        output << "Monitoring interrupted: shutdown requested.\n";
+        requireOutput(output);
+        return;
+    }
     if (!engine.isRunning()) {
         throw std::logic_error("Monitoring requires a running engine");
     }
@@ -174,11 +180,21 @@ void monitorMetrics(Engine& engine, MonitorOptions options, std::ostream& output
     printInteractiveMetrics(previous, output);
     requireOutput(output);
     for (std::size_t sample = 1; sample <= options.sampleCount; ++sample) {
+        if (timing.cancelled && timing.cancelled()) {
+            output << "Monitoring interrupted: shutdown requested.\n";
+            requireOutput(output);
+            return;
+        }
         if (!engine.isRunning()) {
             output << "Monitoring stopped: Engine is not running.\n";
             return;
         }
         timing.wait(options.interval);
+        if (timing.cancelled && timing.cancelled()) {
+            output << "Monitoring interrupted: shutdown requested.\n";
+            requireOutput(output);
+            return;
+        }
         if (!engine.isRunning()) {
             output << "Monitoring stopped: Engine is not running.\n";
             return;
@@ -210,7 +226,10 @@ void registerMetricsCommands(InteractiveRuntime& runtime) {
     runtime.commands().registerCommand("monitor", "Sample metrics (defaults: 1000 ms, 5 samples; bounded to 60 s of waits).",
         [&runtime](const InteractiveCommand& command, std::ostream& output) {
             const auto options = parseMonitorOptions(command);
-            monitorMetrics(runtime.engine(), options, output);
+            MonitorTiming timing;
+            timing.cancelled = [&runtime] { return runtime.shutdownRequested(); };
+            timing.wait = [&runtime](std::chrono::milliseconds interval) { runtime.waitForShutdown(interval); };
+            monitorMetrics(runtime.engine(), options, output, std::move(timing));
             return CommandAction::Continue;
         }, "monitor [<interval-ms> <sample-count>]");
 }

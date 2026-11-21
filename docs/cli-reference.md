@@ -73,19 +73,21 @@ Empty or whitespace-only lines are ignored.
 Unknown names, malformed input, and command errors are reported on stderr, and
 the next prompt remains available. Names are case-sensitive. A session that
 handles command errors and then exits cleanly returns 0. Terminal I/O, startup,
-or shutdown failures return 1. Invalid invocation arguments return 2.
+or shutdown failures return 1. Invalid invocation arguments return 2. Observed
+termination signals return 128 + signal after successful graceful cleanup.
 
 EOF follows the same graceful shutdown path as exit. For an ordinary Windows
 console this is typically Ctrl+Z followed by Enter; Unix-style terminals commonly
-use Ctrl+D. Piped input is supported. Input is read one line at a time with
-standard streams. Stream failures report an error and trigger cleanup. Only the
+use Ctrl+D. Piped input is supported. The executable reads native terminal/pipe
+input without a background reader thread. Input failures report an error and trigger cleanup. Only the
 first exit request is processed; any remaining piped lines are left unread.
 The existing Engine destructor provides its normal idempotent shutdown backstop.
 
 ### Inspection fields and consistency
 
 `status` reports runtime lifecycle separately from Engine lifecycle. Both expose
-Created, Starting, Running, Stopping, and Stopped states; the runtime can also
+Created, Starting, Running, Stopping, and Stopped states; the runtime also exposes
+ShutdownRequested and can
 report Failed after startup or shutdown failure. Before Engine construction,
 Engine information is Unavailable. Uptime uses the runtime's steady clock from
 successful startup, freezes after cleanup, and displays as hours:minutes:seconds.
@@ -154,7 +156,7 @@ int main() {
             std::osyncstream(std::cout) << jobq::cli::summarizeJobText(job.getPayload()) << '\n';
         });
     });
-    return runtime.run(std::cin, std::cout, std::cerr);
+    return runtime.runTerminal(std::cout, std::cerr);
 }
 ```
 
@@ -271,13 +273,109 @@ This is a synchronous bounded command: the input loop waits while existing worke
 threads continue execution. No extra monitoring threads or collectors are created,
 and no Engine or metrics locks are held during waits or terminal formatting.
 After the final sample, `Monitoring completed.` is printed and the prompt returns.
-If another application thread requests shutdown, monitoring notices the Engine
-state at interval boundaries, reports that monitoring stopped, and returns.
-It can wait up to one configured interval before noticing a stop. Output failures
+The runtime's centralized shutdown request interrupts monitoring waits, which
+check signal notifications at most every 25 ms; normal thread requests also wake
+the wait through a condition variable. An interrupted monitor prints
+`Monitoring interrupted: shutdown requested.` and skips the next snapshot and
+success message. Direct external Engine shutdown without a runtime request is
+still noticed at interval boundaries. Output failures
 abort the command without a completion message. Objects remain owned by the
 runtime; callers must finish concurrent monitoring before destroying their owner.
-Interactive cancellation, signals, and asynchronous command input remain future
-lifecycle work. `exit` entered while monitoring is read after the command returns.
+Ctrl+C and other supported signals request graceful shutdown while monitoring.
+Ordinary input remains synchronous: `exit` typed during monitoring is read after
+the command returns unless another shutdown source interrupts it first.
+
+### Shutdown coordination and signals
+
+One runtime thread owns startup, dispatch, Engine stop, and worker joining.
+Normal transitions are Created → Starting → Running → ShutdownRequested →
+Stopping → Stopped. Failures finish as Failed after cleanup. A shutdown request
+before/during startup skips command execution and closes any acquired Engine;
+construction/registration failure never enters a partially initialized loop.
+The runtime supports one invocation; repeated/concurrent startup is rejected.
+
+`exit`, `quit`, EOF, failures, `requestShutdown()`, and supported signals converge
+on that coordinator. Repeated requests do not perform additional Engine stops or
+joins. No new command starts once the request is observed. Interactive submissions
+use a runtime admission gate, so requests close that gate immediately. Already
+running commands may finish a safe value snapshot before yielding. Host code
+calling Engine directly remains subject to Engine's own admission contract:
+submissions close when the coordinator enters `Engine::stop()`.
+
+Engine stop retains its existing policy: accepted ready work, active handlers,
+and scheduled retries drain before workers join. Retry delay can prolong shutdown;
+a handler that never returns can prevent completion. There is no new timeout,
+forced cancellation, worker detachment, or alternate queue policy. Shutdown before
+Engine start closes the queue but leaves recovered Pending work unexecuted, as
+the existing Engine contract specifies. State/metrics remain readable afterward.
+
+Signal handlers only record a lock-free integer notification. They perform no
+logging, allocation, locking, condition-variable notification, Engine calls, or
+joins. The runtime polls that notification from normal code. Registrations are
+scoped to `runTerminal()` and previous dispositions are explicitly restored.
+Only one terminal signal session can be active in a process; registration conflict
+fails startup cleanly. Concurrent signal-disposition changes by unrelated host
+code during that session are unsupported.
+
+| Platform/source | Behavior |
+|---|---|
+| Windows native console Ctrl+C | Records SIGINT, interrupts idle/partial input or monitoring, then drains and joins. |
+| Windows native console Ctrl+Break | Records SIGBREAK and follows the same path. |
+| Windows C-runtime `raise(SIGTERM)` | Records a termination request through the scoped C signal handler. Windows has no general POSIX-style external SIGTERM delivery. |
+| POSIX SIGINT / SIGTERM | Scoped `sigaction` handlers record requests; poll/read handle EINTR and normal code performs cleanup. SIGPIPE is temporarily ignored so broken output can be reported as an I/O failure. |
+| Windows Ctrl+Z then Enter / POSIX Ctrl+D | Normal EOF cleanup. A pipe's writer closing follows the same path, including a final unterminated input line. |
+| Forced kill, Windows console close/logoff/shutdown | No graceful-drain guarantee. Windows close events have OS deadlines and cannot be treated like Ctrl+C. SIGKILL/TerminateProcess cannot be intercepted. |
+
+The executable uses native input polling: Windows console records are inspected
+for a complete line before reading; partial input remains cancellable. Pipes are
+checked for available data/EOF. POSIX uses poll/read. Standard line-mode console
+behavior is expected; custom raw console modes, competing readers, and terminal
+emulators that turn control events into ordinary bytes are outside this contract.
+No reader or monitor threads are created or detached.
+POSIX application handlers must handle interrupted syscalls normally. On Windows,
+the C runtime's one-shot reset rules apply to repeated programmatic `raise` calls;
+native Ctrl+C/Ctrl+Break events use the persistent console handler and repeated
+events remain graceful requests rather than a forced-abort shortcut.
+
+Embedding code can still call `run(input, output, errors)` with injected streams.
+That path installs no global handlers and cannot interrupt an arbitrary blocked
+`std::getline`; its host must unblock/close the input source on cancellation.
+It checks requests before and after reading. Use `runTerminal(output, errors)`
+for native standard-input interruption. The optional initialization callback must
+register handlers before startup without starting/stopping the Engine. Even if
+initialization fails after acquiring workers, runtime cleanup attempts to stop
+and join the acquired Engine. Keep the runtime and captured dependencies alive
+until `run`/`runTerminal` and concurrent callers finish.
+
+Startup, input, Engine-stop/join, output, registration, and restoration errors
+return 1. Cleanup continues after output errors, and diagnostics preserve the
+original failure and report cleanup failures separately where the error stream
+works. A broken error stream may prevent visible diagnostics, but failure status
+is retained. The final Failed state records runtime or cleanup errors even when
+workers successfully joined. Destructors provide only the existing RAII backstop;
+explicit shutdown is the error-reporting path. No test-only join-failure hook is
+added to the Engine.
+
+| Interactive result | Exit status |
+|---|---|
+| exit, quit, EOF, or host request with successful cleanup | 0 |
+| SIGINT / Windows Ctrl+C with successful cleanup | 130 |
+| POSIX/C-runtime SIGTERM with successful cleanup | 143 |
+| Windows Ctrl+Break (SIGBREAK=21) with successful cleanup | 149 |
+| Startup, runtime I/O, shutdown, registration/restoration failure | 1 |
+| Invalid process invocation | 2 |
+
+The first observed signal is retained when sources race; a real runtime/cleanup
+failure takes precedence and returns 1. An exit completed before a signal is
+observed can retain its normal result. Read-only snapshots do not imply that
+draining has completed until Engine stop returns.
+
+Windows MinGW tests exercise real console events with subprocesses, including
+native partial input, console EOF, idle pipes, monitoring, active/queued jobs,
+repeated requests, and exit/signal races. POSIX signal subprocess tests are
+conditional and require a POSIX host; they were not executed in the Windows
+development environment. OS thread-creation/join and handler-restoration failures
+are reported in code but are not artificially injected by these tests.
 
 ### Input grammar
 
@@ -297,7 +395,8 @@ layer; individual future commands will validate their accepted options.
 `CommandDispatcher` maps registered names to callables and generates help from
 that registry. `InteractiveRuntime` owns an Engine, registers the built-in
 commands, runs the input loop, reports failures, and coordinates shutdown.
-Terminal streams are supplied to `run()` for deterministic testing. Its internal
+Terminal streams are supplied to `run()` for deterministic testing; `runTerminal()`
+provides scoped signal handling and native standard-input polling. Its internal
 CLI extension points let future command handlers access that same Engine.
 Registry operations are used on the session thread. Runtime snapshots can also
 be read concurrently with execution and shutdown. A runtime object
@@ -305,8 +404,8 @@ supports one call to `run()` and cannot restart its Engine.
 
 The CLI runtime is built separately from the public library and uses `JobQ::JobQ`.
 Its CLI headers are excluded from installation. Existing one-shot handlers retain
-their established core integration. Advanced lifecycle/signal handling will
-be added incrementally. Their names are not advertised as working session commands.
+their established core integration. Asynchronous input, forced job cancellation,
+and full-screen terminal controls are not implemented.
 The one-shot operations below retain their argument-based behavior. In particular,
 one-shot `status JOB_ID` inspects a stored job, while session `status` takes no
 arguments and inspects the running runtime. Interactive submission uses the
@@ -327,6 +426,7 @@ jobq_cli <command> [arguments...] [options...]
 - `0`: Successful execution.
 - `1`: Command execution, runtime I/O, startup/shutdown error, or job not found.
 - `2`: Invalid invocation, command arguments, or options.
+- `128 + signal`: Interactive signal-triggered graceful exit, including 130/143/149 as described above.
 
 ### Architecture Note
 The existing argument-based operations follow a **one-command-per-process** model.

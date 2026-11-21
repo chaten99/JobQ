@@ -30,6 +30,7 @@ std::string_view stateName(RuntimeState state) {
         case RuntimeState::Created: return "Created";
         case RuntimeState::Starting: return "Starting";
         case RuntimeState::Running: return "Running";
+        case RuntimeState::ShutdownRequested: return "ShutdownRequested";
         case RuntimeState::Stopping: return "Stopping";
         case RuntimeState::Stopped: return "Stopped";
         case RuntimeState::Failed: return "Failed";
