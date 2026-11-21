@@ -22,15 +22,17 @@ Engine initialized successfully.
 Runtime started.
 jobq> help
 Available commands:
-  exit                     Stop the runtime and exit.
-  help [command]           Display available commands.
-  job <job-id>             Inspect one available job by its identifier.
-  jobs                     List available jobs in ascending identifier order.
-  queue                    Display waiting jobs and execution counters.
-  quit                     Alias for exit.
-  status                   Display runtime status.
-  submit <type> <payload>  Submit a job to a registered handler; quote multi-word payloads.
-  workers                  Display worker pool information.
+  exit                                    Stop the runtime and exit.
+  help [command]                          Display available commands.
+  job <job-id>                            Inspect one available job by its identifier.
+  jobs                                    List available jobs in ascending identifier order.
+  metrics                                 Display cumulative Engine processing metrics.
+  monitor [<interval-ms> <sample-count>]  Sample metrics (defaults: 1000 ms, 5 samples; bounded to 60 s of waits).
+  queue                                   Display waiting jobs and execution counters.
+  quit                                    Alias for exit.
+  status                                  Display runtime status.
+  submit <type> <payload>                 Submit a job to a registered handler; quote multi-word payloads.
+  workers                                 Display worker pool information.
 jobq> exit
 Shutting down JobQ...
 Runtime stopped.
@@ -55,13 +57,17 @@ Session persistence means the same Engine stays alive across terminal commands.
 | `submit <type> <payload>` | Submits a job to a registered handler using default JobOptions. |
 | `jobs` | Lists available live/recovered records ordered by ascending ID. |
 | `job <job-id>` | Shows one record using a positive decimal uint64 ID. |
+| `metrics` | Displays the Engine's cumulative processing metrics. |
+| `monitor [<interval-ms> <sample-count>]` | Displays a baseline and a bounded series of cumulative snapshots and interval changes. |
 | `exit` | Leaves the command loop and shuts down the Engine. |
 | `quit` | Performs the same action as `exit`. |
 
 Only `help` accepts an optional command name, such as `help status`,
 `help workers`, or `help queue`. Use `help submit`, `help jobs`, and `help job`
 for job commands. `submit` requires exactly two arguments and `job` exactly one;
-`jobs`, `status`, `workers`, `queue`, `exit`, and `quit` accept no arguments.
+`jobs`, `status`, `workers`, `queue`, `metrics`, `exit`, and `quit` accept no arguments.
+`monitor` accepts either no arguments or exactly two bounded positive integers.
+Use `help metrics` and `help monitor` for their registered usage.
 Invalid inspection arguments and unknown help topics display usage errors.
 Empty or whitespace-only lines are ignored.
 Unknown names, malformed input, and command errors are reported on stderr, and
@@ -187,6 +193,92 @@ vanish when their Engine is destroyed. Corrupt complete records fail startup;
 the existing journal implementation repairs incomplete tails. Listing itself
 does no storage I/O and cannot report a fresh journal read error.
 
+### Interactive metrics and bounded monitoring
+
+Inside `jobq_cli interactive`, `metrics` reads the session Engine's existing
+`Engine::metrics()` snapshot. No counters are recalculated from command history,
+job lists, or the journal, and inspection never resets them. Before an Engine is
+initialized, the command reports an error rather than fabricated zero statistics.
+After shutdown the retained Engine's cumulative metrics remain readable through
+the runtime interface. This is distinct from the one-shot `jobq_cli metrics`
+operation described later, which cannot recover another process's memory metrics.
+
+| Field | Actual meaning |
+|---|---|
+| Submitted jobs | Accepted fresh submissions counted by JobManager after enqueue succeeds. Retries and recovered jobs do not increment this counter. |
+| Started executions | Worker attempts counted after a job successfully transitions to Running. |
+| Completed executions | Attempts recorded as successfully finished, after the Completed state transition succeeds. |
+| Failed executions | Attempts whose processing throws after execution timing starts. Failure reporting precedes the failed-state transition and retry scheduling. |
+| Scheduled retries | Successful retry enqueues, including recovered retry scheduling; not additional fresh submissions. |
+| Finished executions | Completed executions plus failed executions, as computed by the existing metrics snapshot. |
+| Total execution | Sum of recorded successful and failed attempt durations. |
+| Average execution | Existing integer-nanosecond total divided by finished executions; zero before any attempt finishes. |
+| Metrics elapsed | Steady-clock time since JobMetrics construction, including Engine setup and subsequent idle time. |
+| Cumulative throughput | Finished executions divided by metrics elapsed seconds, in executions/s. |
+
+Execution timing begins after the Running transition and includes start-counter
+recording, worker diagnostics, handler execution, and the successful Completed
+transition (including its persistence). For failure, it ends at exception capture,
+before failed-state persistence and retry scheduling. It excludes queue wait and
+retry delay, and is broader than handler-only duration. Total durations sum across
+workers and can exceed wall time. A retried job can contribute multiple failed or
+successful attempts. Counts are neither unique completed jobs nor queue depth.
+
+Each metrics snapshot is internally synchronized, but counter updates for one
+job happen in separate operations. A worker can start before submission counting
+finishes, and a failure can be visible before its retry counter increments.
+Metrics are in memory and reset with a new Engine; recovered journal records do
+not restore historical counters. They do not expose worker activity, percentile
+latencies, recent rolling windows, or a persisted history. Metrics elapsed time
+continues after stop, so cumulative throughput can decline while idle/stopped.
+
+Counters display as integers. Durations use ns, us, ms, or s according to magnitude;
+scaled durations and rates show three decimal places. A newly started Engine
+shows zero counters/durations and zero finished-attempt throughput. Small positive
+rates can round to 0.000 executions/s.
+
+```text
+jobq> metrics
+jobq> monitor
+jobq> monitor 100 3
+jobq> metrics
+jobq> status
+```
+
+`monitor` defaults to an interval of 1000 ms and five samples. Custom arguments
+must both be provided: interval 1–10000 ms, sample count 1–60, and
+interval × sample count at most 60000 ms. Zero, negative/signed values, fractional
+numbers, overflow, unsupported options, and extra/missing arguments are rejected
+before monitoring starts. The limit bounds requested waits; OS scheduling,
+snapshot retrieval, and output overhead can make wall time longer.
+
+Monitoring prints a separate initial Baseline, then waits before each numbered
+sample. Exactly the requested number of samples follow unless shutdown or an
+error interrupts the operation. Each sample shows cumulative metrics and an
+Interval changes section for submitted/started/completed/failed/retry/finished
+counters. Finished execution rate divides the finished-attempt delta by the
+actual steady-clock interval between snapshot captures, including output and
+sampling overhead. It does not assume the requested wait matches elapsed time,
+and it is distinct from cumulative throughput. There is no rolling-window rate.
+
+Counter/time decreases, inconsistent finished totals, or nonpositive measured
+intervals yield an Unavailable indication rather than underflow or a negative
+rate. The next sample uses the latest baseline and can resume normal reporting.
+Normal Engine metrics have no reset command; reset handling protects interval
+calculations from an unexpected reset or inconsistent input.
+
+This is a synchronous bounded command: the input loop waits while existing worker
+threads continue execution. No extra monitoring threads or collectors are created,
+and no Engine or metrics locks are held during waits or terminal formatting.
+After the final sample, `Monitoring completed.` is printed and the prompt returns.
+If another application thread requests shutdown, monitoring notices the Engine
+state at interval boundaries, reports that monitoring stopped, and returns.
+It can wait up to one configured interval before noticing a stop. Output failures
+abort the command without a completion message. Objects remain owned by the
+runtime; callers must finish concurrent monitoring before destroying their owner.
+Interactive cancellation, signals, and asynchronous command input remain future
+lifecycle work. `exit` entered while monitoring is read after the command returns.
+
 ### Input grammar
 
 The parser splits a line into a command name and an ordered argument list.
@@ -213,7 +305,7 @@ supports one call to `run()` and cannot restart its Engine.
 
 The CLI runtime is built separately from the public library and uses `JobQ::JobQ`.
 Its CLI headers are excluded from installation. Existing one-shot handlers retain
-their established core integration. Interactive metrics and advanced lifecycle/signal handling will
+their established core integration. Advanced lifecycle/signal handling will
 be added incrementally. Their names are not advertised as working session commands.
 The one-shot operations below retain their argument-based behavior. In particular,
 one-shot `status JOB_ID` inspects a stored job, while session `status` takes no
