@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "jobq/EngineConfig.h"
 #include "jobq/EngineSnapshot.h"
@@ -34,6 +35,8 @@ public:
     JobId submit(std::string type, std::string payload, JobOptions options = {});
 
     std::optional<JobStatus> getStatus(JobId id) const;
+    std::optional<JobSnapshot> getJob(JobId id) const;
+    std::vector<JobSnapshot> listJobs() const;
     JobMetricsSnapshot metrics() const;
     bool isRunning() const;
 

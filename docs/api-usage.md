@@ -118,6 +118,8 @@ contract. Use an explicit external `stop()` when shutdown errors must be caught.
 | `stop()` before `start()` | Closes the engine. Recovered queued work remains in the journal for future recovery. |
 | Destruction | Calls `stop()` and releases owned components and callables after worker cleanup. |
 | `getStatus(id)` | Returns `std::optional<JobStatus>`, empty for an unknown ID. Available before startup and after shutdown. |
+| `getJob(id)` | Returns `std::optional<JobSnapshot>`, empty for an unknown ID, including zero. Available before startup and after shutdown. |
+| `listJobs()` | Returns `std::vector<JobSnapshot>` ordered by ascending ID, with one entry per available registry job. |
 | `metrics()` | Returns a consistent `JobMetricsSnapshot` using the existing core semantics. |
 | `isRunning()` | Reports whether startup completed and shutdown has not begun. |
 
@@ -142,6 +144,24 @@ update. After `stop()` returns, worker execution and metrics updates are drained
 The API adds no cancellation, restart, distributed coordination, or ABI-versioning
 contract. It retains the core's in-process scheduling and journal semantics.
 Registered jobs remain in the manager's registry for the Engine's lifetime.
+
+Detailed lookup and listing reuse `JobSnapshot`: ID, type, full payload, priority,
+status, retry policy, and attempts made. Values are copied under each job's lock;
+changing a returned value cannot change the original job. Registry membership is
+captured under its lock, then job snapshots and sorting happen after releasing
+that lock. Engine access synchronizes with submission acceptance/rollback. The
+whole list is not one global execution instant; workers may transition between
+individual snapshots. Callers must keep the Engine alive until calls finish.
+
+These methods inspect the live registry, including jobs recovered during Engine
+construction. They do not reread the journal or discover edits made by another
+process. Recovery errors propagate from construction; failed submission writes
+propagate from `submit` and remove that job from the registry. There is no retention
+or eviction policy. Listing copies every retained job, including payloads, so
+memory and time grow with the registry. Lifecycle timestamps, saved errors, and
+scheduled execution deadlines are absent from `JobSnapshot`. A Pending job with
+prior attempts can be waiting for a retry; its exact queue placement is not part
+of this record. Retry policy limits retries after the initial attempt.
 
 Build and run the standalone example using `cmake --build build --target
 jobq_public_api_example` and `./build/jobq_public_api_example.exe` on Windows.

@@ -49,8 +49,7 @@ void testSessionAndHelp() {
         check(help.str().find(command) != std::string::npos,
               std::string("Help includes registered command ") + command);
     }
-    check(help.str().find("submit") == std::string::npos &&
-          help.str().find("metrics") == std::string::npos,
+    check(help.str().find("metrics") == std::string::npos,
           "Help does not advertise future commands");
     for (const auto* command : {"status", "workers", "queue", "help", "exit", "quit"}) {
         std::ostringstream topic;

@@ -182,6 +182,17 @@ JobMetricsSnapshot Engine::metrics() const {
     return impl_->metrics.snapshot();
 }
 
+std::optional<JobSnapshot> Engine::getJob(JobId id) const {
+    std::lock_guard lock(impl_->mutex);
+    const auto job = impl_->manager->getJob(id);
+    return job ? std::optional<JobSnapshot>(job->snapshot()) : std::nullopt;
+}
+
+std::vector<JobSnapshot> Engine::listJobs() const {
+    std::lock_guard lock(impl_->mutex);
+    return impl_->manager->listJobs();
+}
+
 bool Engine::isRunning() const {
     std::lock_guard lock(impl_->mutex);
     return impl_->state == Impl::State::Running;

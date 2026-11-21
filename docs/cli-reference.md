@@ -22,12 +22,15 @@ Engine initialized successfully.
 Runtime started.
 jobq> help
 Available commands:
-  exit            Stop the runtime and exit.
-  help [command]  Display available commands.
-  queue           Display waiting jobs and execution counters.
-  quit            Alias for exit.
-  status          Display runtime status.
-  workers         Display worker pool information.
+  exit                     Stop the runtime and exit.
+  help [command]           Display available commands.
+  job <job-id>             Inspect one available job by its identifier.
+  jobs                     List available jobs in ascending identifier order.
+  queue                    Display waiting jobs and execution counters.
+  quit                     Alias for exit.
+  status                   Display runtime status.
+  submit <type> <payload>  Submit a job to a registered handler; quote multi-word payloads.
+  workers                  Display worker pool information.
 jobq> exit
 Shutting down JobQ...
 Runtime stopped.
@@ -38,7 +41,7 @@ Initialization and startup messages follow the operations they report. If
 construction or startup fails, the runtime reports an error, returns exit code 1,
 and does not enter a partially initialized command loop. One session owns one
 Engine for its entire lifetime. Its default configuration is four workers with
-in-memory storage. This foundation registers no handlers or demonstration jobs.
+in-memory storage. The standalone interactive entry point registers no handlers or demonstration jobs.
 Session persistence means the same Engine stays alive across terminal commands.
 
 ### Available session commands
@@ -49,11 +52,16 @@ Session persistence means the same Engine stays alive across terminal commands.
 | `status` | Reports runtime and Engine states, configured workers, submitted jobs, and uptime. |
 | `workers` | Reports worker pool state and configured worker count. |
 | `queue` | Reports waiting queue entries and historical execution counters. |
+| `submit <type> <payload>` | Submits a job to a registered handler using default JobOptions. |
+| `jobs` | Lists available live/recovered records ordered by ascending ID. |
+| `job <job-id>` | Shows one record using a positive decimal uint64 ID. |
 | `exit` | Leaves the command loop and shuts down the Engine. |
 | `quit` | Performs the same action as `exit`. |
 
 Only `help` accepts an optional command name, such as `help status`,
-`help workers`, or `help queue`. Other session commands accept no arguments.
+`help workers`, or `help queue`. Use `help submit`, `help jobs`, and `help job`
+for job commands. `submit` requires exactly two arguments and `job` exactly one;
+`jobs`, `status`, `workers`, `queue`, `exit`, and `quit` accept no arguments.
 Invalid inspection arguments and unknown help topics display usage errors.
 Empty or whitespace-only lines are ignored.
 Unknown names, malformed input, and command errors are reported on stderr, and
@@ -107,6 +115,78 @@ report samples components at nearby instants; it is not a globally atomic view.
 Snapshots remain available after shutdown while the owning runtime exists.
 Callers must finish concurrent inspection before destroying that owner.
 
+### Submitting and inspecting jobs
+
+`submit TYPE PAYLOAD` passes the type and payload unchanged to `Engine::submit`.
+Use quotes for multi-word payloads, for example `submit PRINT "hello world"`.
+An explicit empty payload (`submit PRINT ''`) is valid; omitting it is an error.
+Single quotes can contain double quotes and vice versa. Commas and backslashes
+are literal bytes. There are no shell escapes, JSON conversion, or submission
+options for priority/retries in this command; the existing Engine defaults apply.
+
+Success appears only after submission is accepted and includes the actual ID.
+The displayed status is sampled afterward and may already be Running or
+Completed. Unknown types and startup/shutdown/storage errors are reported through
+the existing runtime error path; errors keep the session alive.
+
+Handlers must be registered before Engine startup. The standalone
+`jobq_cli interactive` registers none, so its submissions fail until application
+handlers are wired into startup. EMAIL/REPORT/CALCULATE from the one-shot `run`
+demonstration are not automatically registered in the interactive Engine.
+Applications using the checkout's `jobq_cli_runtime` target can supply its
+initialization callback, which receives the session's single Engine before start:
+
+```cpp
+#include <iostream>
+#include <syncstream>
+#include "cli/InteractiveRuntime.h"
+#include "cli/JobCommands.h"
+
+int main() {
+    jobq::cli::InteractiveRuntime runtime({.workerCount = 1}, [](jobq::Engine& engine) {
+        engine.registerHandler("PRINT", [](const jobq::Job& job) {
+            std::osyncstream(std::cout) << jobq::cli::summarizeJobText(job.getPayload()) << '\n';
+        });
+    });
+    return runtime.run(std::cin, std::cout, std::cerr);
+}
+```
+
+The callback should register handlers without starting or stopping the Engine.
+It runs once; exceptions prevent the command loop from starting. Captured
+application dependencies must outlive worker shutdown. CLI runtime headers and
+the CLI target remain checkout-only, separate from installed `JobQ::JobQ`.
+An application may set `EngineConfig::storagePath` in the constructor to use the
+existing journal/recovery implementation. The standalone interactive invocation
+continues to accept no storage/worker flags.
+
+`jobs` lists ID, safely rendered type, current status, priority, and attempts
+made. It prints `No jobs available.` for an empty registry, shows one row per ID,
+and includes all retained records without pagination or a silent row limit.
+Large lists therefore cost memory/time proportional to retained records and
+their payloads. `job ID` additionally shows a payload preview and retry policy.
+No timestamps, saved last error, or next execution deadline are recorded by
+this API; those fields display Unavailable. Pending includes initially queued
+jobs and prepared retries. Attempts and retry policy distinguish their history,
+while the queue command reports aggregate ready/retry placement.
+
+Types and payload previews quote and escape backslashes, quotes, control bytes,
+DEL, and non-ASCII bytes using visible hexadecimal escapes. At most the first
+160 source bytes are shown; longer values include a truncation notice and total
+byte count. The stored payload is unchanged. `jobs` omits payloads entirely.
+Unknown IDs produce a not-found error. Zero, signs, whitespace within the ID,
+non-decimal text, overflow, and extra arguments produce usage errors.
+
+Listing/lookup use `Engine::listJobs()` and `Engine::getJob()` value snapshots,
+with no direct CLI journal access and no worker or scheduling changes. Each job
+snapshot is synchronized; a list can span nearby execution instants. Jobs remain
+in the registry for the Engine's lifetime, including after shutdown. Configured
+storage is recovered at construction, then the registry reflects live state.
+External journal edits are not refreshed during a session. In-memory records
+vanish when their Engine is destroyed. Corrupt complete records fail startup;
+the existing journal implementation repairs incomplete tails. Listing itself
+does no storage I/O and cannot report a fresh journal read error.
+
 ### Input grammar
 
 The parser splits a line into a command name and an ordered argument list.
@@ -133,12 +213,12 @@ supports one call to `run()` and cannot restart its Engine.
 
 The CLI runtime is built separately from the public library and uses `JobQ::JobQ`.
 Its CLI headers are excluded from installation. Existing one-shot handlers retain
-their established core integration. Interactive job submission and inspection,
-metrics, and advanced lifecycle/signal handling will
+their established core integration. Interactive metrics and advanced lifecycle/signal handling will
 be added incrementally. Their names are not advertised as working session commands.
 The one-shot operations below retain their argument-based behavior. In particular,
 one-shot `status JOB_ID` inspects a stored job, while session `status` takes no
-arguments and inspects the running runtime. Session submission is still unavailable.
+arguments and inspects the running runtime. Interactive submission uses the
+registered handlers and live Engine described above.
 
 ---
 

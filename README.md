@@ -16,7 +16,7 @@ Conceptually inspired by task processing systems like Celery and BullMQ, JobQ br
 - **Crash Recovery:** Startup recovery pipeline reconciling latest job states and automatically re-enqueuing interrupted and pending tasks.
 - **Multi-Command CLI:** Full-featured command-line tool (`jobq_cli`) supporting `submit`, `list`, `status`, `run`, and `metrics` commands.
 - **Metrics & Observability:** Thread-safe execution counters, monotonic latency measurements (`steady_clock`), real-time throughput calculations, and Schema Version 1 structured JSON export.
-- **Comprehensive Testing:** 38 automated test suites and four public API example checks integrated with CTest, including multi-threaded concurrency proofs using `std::latch`.
+- **Comprehensive Testing:** 40 automated test suites and four public API example checks integrated with CTest, including multi-threaded concurrency proofs using `std::latch`.
 
 ---
 
@@ -85,7 +85,7 @@ cmake --build build
 ```powershell
 ctest --test-dir build --output-on-failure
 ```
-With examples enabled, all 42 CTest entries should pass cleanly.
+With examples enabled, all 44 CTest entries should pass cleanly.
 
 ---
 
@@ -201,17 +201,22 @@ The CLI executable is located at `build/jobq_cli.exe`.
 
 This starts one Engine and keeps it running while commands are entered at
 `jobq>`. The available commands are `help [command]`, `status`, `workers`,
-`queue`, `exit`, and its alias `quit`. Use `help status`, `help workers`, or
-`help queue` for usage. Inspection reports actual lifecycle state, configured
+`queue`, `submit <type> <payload>`, `jobs`, `job <job-id>`, `exit`, and its alias
+`quit`. Use `help submit`, `help jobs`, or `help job` for job command usage.
+Inspection reports actual lifecycle state, configured
 workers, waiting queue entries, and historical execution counters.
 Empty input is ignored. Unknown commands and invalid arguments report an error
 and leave the session running. Exit or EOF drains the Engine and joins workers.
 Use `jobq_cli interactive --help` for invocation help.
 
 The session currently uses the default in-memory Engine configuration and
-registers no job handlers. Worker activity and individual worker details are
-unavailable. Interactive job submission, job inspection, metrics, and runtime
-management commands are planned additions. The existing argument-based
+registers no job handlers. Applications can supply an Engine initialization
+callback to register real handlers before startup; submission rejects unknown
+types. Quoted payloads preserve spaces and allow empty strings. Job listing and
+lookup use read-only Engine snapshots, ordered by ID, including recovered records
+when storage is configured. See the CLI guide for handler setup and record limits.
+Worker activity and individual worker details are unavailable. Interactive
+metrics and runtime management commands are planned additions. The existing argument-based
 commands below operate as one-shot commands. Launching without a command retains
 the existing usage error, and `jobq` remains the separate demonstration executable.
 See the [CLI guide](docs/cli-reference.md) for input syntax and runtime behavior.
@@ -385,7 +390,7 @@ Detailed technical documentation is available in the [`docs/`](docs/README.md) d
 - Fully functioning in-process background job processing engine.
 - Single-host file journal persistence and crash recovery.
 - Multi-command CLI and Schema v1 JSON runtime metrics.
-- 38 automated test suites plus four runnable public API example checks.
+- 40 automated test suites plus four runnable public API example checks.
 
 ### Current Limitations
 - **Single Process / Local Host:** JobQ currently coordinates jobs within a single process. It does not provide distributed queue coordination across multiple independent server processes or network clusters.
