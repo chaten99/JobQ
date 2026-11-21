@@ -100,7 +100,7 @@ void registerJobCommands(InteractiveRuntime& runtime) {
                 throw std::invalid_argument("Usage: submit <type> <payload>");
             }
             auto& engine = runtime.engine();
-            const auto id = engine.submit(command.arguments[0], command.arguments[1]);
+            const auto id = runtime.submitJob(command.arguments[0], command.arguments[1]);
             std::ostringstream report;
             report << "Job submitted successfully.\n";
             field(report, "Job ID", id);

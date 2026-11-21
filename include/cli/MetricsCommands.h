@@ -26,6 +26,7 @@ struct MonitorOptions {
 struct MonitorTiming {
     std::function<std::chrono::steady_clock::time_point()> now;
     std::function<void(std::chrono::milliseconds)> wait;
+    std::function<bool()> cancelled{};
 };
 
 struct MetricsInterval {

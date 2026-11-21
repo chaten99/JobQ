@@ -171,6 +171,7 @@ add_library(jobq_cli_runtime STATIC
     src/cli/InspectionCommands.cpp
     src/cli/JobCommands.cpp
     src/cli/MetricsCommands.cpp
+    src/cli/TerminalSession.cpp
 )
 
 target_link_libraries(jobq_cli_runtime PUBLIC JobQ::JobQ)
@@ -186,6 +187,23 @@ target_link_libraries(jobq_cli PRIVATE jobq_cli_runtime)
 include(CTest)
 
 if(BUILD_TESTING)
+
+    add_executable(jobq_cli_lifecycle_test tests/cli_lifecycle_test.cpp)
+    target_link_libraries(jobq_cli_lifecycle_test PRIVATE jobq_cli_runtime)
+    add_test(NAME jobq_cli_lifecycle COMMAND jobq_cli_lifecycle_test)
+    set_tests_properties(jobq_cli_lifecycle PROPERTIES TIMEOUT 30)
+
+    if(WIN32)
+        add_executable(jobq_cli_windows_signals_test tests/cli_windows_signals_test.cpp)
+        target_link_libraries(jobq_cli_windows_signals_test PRIVATE jobq_cli_runtime)
+        add_test(NAME jobq_cli_windows_signals COMMAND jobq_cli_windows_signals_test)
+        set_tests_properties(jobq_cli_windows_signals PROPERTIES TIMEOUT 60)
+    elseif(UNIX)
+        add_executable(jobq_cli_posix_signals_test tests/cli_posix_signals_test.cpp)
+        target_link_libraries(jobq_cli_posix_signals_test PRIVATE jobq_cli_runtime)
+        add_test(NAME jobq_cli_posix_signals COMMAND jobq_cli_posix_signals_test)
+        set_tests_properties(jobq_cli_posix_signals PROPERTIES TIMEOUT 60)
+    endif()
 
     foreach(component IN ITEMS metrics_commands monitoring)
         add_executable(jobq_cli_${component}_test tests/cli_${component}_test.cpp)
