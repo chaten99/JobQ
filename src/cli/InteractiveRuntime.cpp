@@ -10,6 +10,7 @@
 #include "cli/CommandLine.h"
 #include "cli/InspectionCommands.h"
 #include "cli/JobCommands.h"
+#include "cli/MetricsCommands.h"
 
 namespace jobq::cli {
 
@@ -43,6 +44,7 @@ InteractiveRuntime::InteractiveRuntime(EngineConfig config, EngineInitializer in
     commands_.registerCommand("quit", "Alias for exit.", requestExit);
     registerInspectionCommands(*this);
     registerJobCommands(*this);
+    registerMetricsCommands(*this);
 }
 
 CommandDispatcher& InteractiveRuntime::commands() noexcept {

@@ -170,6 +170,7 @@ add_library(jobq_cli_runtime STATIC
     src/cli/InteractiveRuntime.cpp
     src/cli/InspectionCommands.cpp
     src/cli/JobCommands.cpp
+    src/cli/MetricsCommands.cpp
 )
 
 target_link_libraries(jobq_cli_runtime PUBLIC JobQ::JobQ)
@@ -185,6 +186,13 @@ target_link_libraries(jobq_cli PRIVATE jobq_cli_runtime)
 include(CTest)
 
 if(BUILD_TESTING)
+
+    foreach(component IN ITEMS metrics_commands monitoring)
+        add_executable(jobq_cli_${component}_test tests/cli_${component}_test.cpp)
+        target_link_libraries(jobq_cli_${component}_test PRIVATE jobq_cli_runtime)
+        add_test(NAME jobq_cli_${component} COMMAND jobq_cli_${component}_test)
+        set_tests_properties(jobq_cli_${component} PROPERTIES TIMEOUT 30)
+    endforeach()
 
     add_executable(jobq_cli_job_commands_test tests/cli_job_commands_test.cpp)
     target_link_libraries(jobq_cli_job_commands_test PRIVATE jobq_cli_runtime)
