@@ -173,4 +173,9 @@ void JobQueue::setContentionMetrics(ContentionMetrics* metrics) noexcept {
     contention_ = metrics;
 }
 
+JobQueueSnapshot JobQueue::snapshot() const {
+    MeasuredMutexLock lock(mutex_, contention_, LockCategory::JobQueue);
+    return {jobs_.size(), delayedRetries_.size(), closed_};
+}
+
 }
