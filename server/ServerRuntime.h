@@ -4,6 +4,7 @@
 #include <functional>
 #include <iosfwd>
 #include <memory>
+#include <mutex>
 
 #include "ServerConfig.h"
 #include "jobq/Engine.h"
@@ -18,6 +19,11 @@ namespace jobq::server
         std::atomic<bool> listening{false};
         std::atomic<bool> stopping{false};
         bool ready() const;
+        JobId submit(std::string type, std::string payload, JobOptions options = {});
+        void requestStop();
+
+    private:
+        std::mutex admission_;
     };
 
     class ServerRuntime

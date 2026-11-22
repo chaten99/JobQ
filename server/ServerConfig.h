@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <string>
 #include <vector>
 
@@ -17,6 +18,7 @@ namespace jobq::server
         std::size_t maxBodyBytes{1024 * 1024};
         std::size_t maxConnections{1024};
         bool help{false};
+        std::filesystem::path storagePath{};
     };
 
     ServerConfig parseConfig(const std::vector<std::string> &arguments);
