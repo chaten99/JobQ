@@ -1,7 +1,9 @@
 #include "ServerConfig.h"
 #include "ServerRuntime.h"
 #include "HealthRoutes.h"
+#include "InspectionRoutes.h"
 
+#include <future>
 #include <sstream>
 #include <stdexcept>
 
@@ -27,18 +29,43 @@ int main()
                                                                      { jobq::server::parseConfig(arguments); }, ""),
                         "Invalid/missing/repeated configuration is rejected");
             }
+            jobq_test::Counter entered;
+            jobq_test::Gate release;
             jobq::server::ServerContext context(defaults);
+            const auto request = drogon::HttpRequest::newHttpRequest();
+            const auto unavailable = [&] {
+                for (const auto inspect : {jobq::server::workersResponse, jobq::server::runtimeResponse}) {
+                    const auto response = inspect(context, request);
+                    if (response->statusCode() != drogon::k503ServiceUnavailable ||
+                        (!response->getJsonObject() || (*response->getJsonObject())["error"]["code"] != "ENGINE_UNAVAILABLE")) return false;
+                }
+                return true;
+            };
+            check(unavailable(), "Inspection is unavailable before startup");
             check(!context.ready() && jobq::server::readinessResponse(context)->statusCode() == drogon::k503ServiceUnavailable,
                   "Readiness returns 503 before Engine and listener startup");
+            context.engine.registerHandler("BLOCK", [&](const jobq::Job&) {
+                entered.add();
+                if (!release.wait()) throw std::runtime_error("Release timed out");
+            });
             context.engine.start();
-            check(!context.ready(), "A running Engine alone does not imply HTTP readiness");
-            context.listening.store(true);
+            check(!context.ready() && unavailable(), "A running Engine alone does not imply HTTP readiness");
+            context.markListening();
         check(context.ready(),
                   "Readiness requires the started listener and running Engine");
-            context.stopping.store(true);
+            context.submit("BLOCK", "");
+            check(entered.waitAtLeast(1), "A real worker is executing before shutdown");
+            context.requestStop();
+            check(unavailable(), "Inspection is unavailable after shutdown is requested");
             check(!context.ready() && jobq::server::readinessResponse(context)->statusCode() == drogon::k503ServiceUnavailable,
                   "Shutdown immediately returns readiness 503");
-            context.engine.stop();
+            auto draining = std::async(std::launch::async, [&] { context.engine.stop(); });
+            check(jobq_test::waitUntil([&] { return context.engine.snapshot().state == jobq::EngineState::Stopping; }),
+                  "The Engine enters stopping while an accepted job is held");
+            check(unavailable(), "Inspection returns generic unavailable responses while workers drain");
+            release.open();
+            draining.get();
+            check(unavailable(), "Inspection stays unavailable after workers stop");
             check(context.engine.snapshot().workersStopped, "Context Engine workers are joined");
             jobq::Engine *acquired = nullptr;
             jobq::server::ServerRuntime failing(custom, [&](jobq::Engine &engine)

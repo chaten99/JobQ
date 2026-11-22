@@ -39,7 +39,7 @@ endfunction()
 
 jobq_fetch_drogon()
 
-add_library(jobq_server_runtime STATIC ServerConfig.cpp ServerRuntime.cpp HealthRoutes.cpp ApiJson.cpp ApiRoutes.cpp)
+add_library(jobq_server_runtime STATIC ServerConfig.cpp ServerRuntime.cpp HealthRoutes.cpp ApiJson.cpp ApiRoutes.cpp InspectionRoutes.cpp)
 target_include_directories(jobq_server_runtime PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(jobq_server_runtime PUBLIC JobQ::JobQ PRIVATE Drogon::Drogon)
 target_compile_features(jobq_server_runtime PUBLIC cxx_std_20)

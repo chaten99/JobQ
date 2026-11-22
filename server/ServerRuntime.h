@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <functional>
 #include <iosfwd>
 #include <memory>
@@ -16,6 +17,8 @@ namespace jobq::server
     {
         explicit ServerContext(const ServerConfig &config);
         Engine engine;
+        void markListening();
+        std::chrono::seconds uptime() const;
         std::atomic<bool> listening{false};
         std::atomic<bool> stopping{false};
         bool ready() const;
@@ -24,6 +27,7 @@ namespace jobq::server
 
     private:
         std::mutex admission_;
+        std::atomic<std::chrono::steady_clock::duration::rep> readyTicks_{0};
     };
 
     class ServerRuntime

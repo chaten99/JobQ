@@ -1,9 +1,8 @@
-# Job and queue REST API
+# JobQ REST API
 
 Build and run the [optional HTTP server](http-server.md) using Drogon 1.9.14.
 The default listener is `127.0.0.1:8080`. Health remains available at
-`GET /health/live` and `GET /health/ready`. This increment adds exactly four
-versioned operations; it adds no worker-management, metrics, WebSocket, or dashboard API.
+`GET /health/live` and `GET /health/ready`.
 
 | Method and path | Result |
 |---|---|
@@ -11,6 +10,8 @@ versioned operations; it adds no worker-management, metrics, WebSocket, or dashb
 | `POST /api/v1/jobs` | Submit through the running server-owned Engine. |
 | `GET /api/v1/jobs/{id}` | One actual retained job snapshot, or 404. |
 | `GET /api/v1/queue` | The single queue's ready/delayed waiting entries and closed flag. |
+| `GET /api/v1/workers` | Aggregate worker pool lifecycle and configured count. |
+| `GET /api/v1/runtime` | Server and Engine lifecycle, uptime, admission, worker configuration, and JobQ version. |
 
 ## Shared conventions
 
@@ -196,6 +197,45 @@ is no distributed/shared backend, authentication, authorization, CORS, or rate
 limiting in this increment. Bind remains local by default. Do not expose it as a
 production service without later security work. Verification here is Windows
 MinGW UCRT64; POSIX/MSVC/macOS are not claimed tested.
+
+## Worker and runtime inspection
+
+Both endpoints are read-only GET requests with no query parameters. Responses use
+the same JSON envelope and no-store header as the other versioned endpoints.
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8080/api/v1/workers
+Invoke-RestMethod http://127.0.0.1:8080/api/v1/runtime
+```
+
+The worker response contains `data.state` and `data.configured_workers`.
+The lifecycle comes from the pool snapshot. The state mapping prioritizes
+`stopped`, then `stopping`, then `running` if the pool has started, and
+otherwise `created`. In normal operation a ready server reports `running`.
+The count is the configured number of workers. Active and idle counts, individual worker
+identities, and worker health are unavailable. There are no worker control
+or scaling routes. A zero-worker configuration is rejected at startup.
+
+The runtime response contains these fields:
+
+| Field under `data` | Meaning |
+|---|---|
+| `server.state` | `running` when the verified listener is ready and shutdown has not been requested at sampling time. |
+| `server.uptime_seconds` | Whole seconds since the listener passed its readiness probe, measured using a steady clock. |
+| `engine.state` | The sampled Engine lifecycle. A successful response requires `running`. |
+| `engine.accepting_jobs` | Whether server admission is open at sampling time. Individual submissions can still fail validation, handler lookup, or storage. |
+| `engine.configured_workers` | Configured count from the Engine's worker pool snapshot. |
+| `version.jobq` | Version from JobQ's public version header. |
+
+Unsupported query parameters return 400 `INVALID_REQUEST`. Before readiness,
+after shutdown is requested, and after the Engine stops, requests reaching a
+handler return 503 `ENGINE_UNAVAILABLE`. After listener closure, clients may
+instead see a closed or refused connection. Unexpected exceptions return a
+generic 500 `INTERNAL_ERROR`. No bind or storage configuration is exposed.
+
+The server samples its existing Engine and WorkerPool. Component values and
+separate HTTP responses may represent nearby instants. A successful response does
+not promise that the runtime will still be ready when a later request arrives.
 
 ## Verification
 

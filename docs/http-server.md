@@ -2,7 +2,7 @@
 
 `jobq_server` is a separate host for the reusable JobQ Engine. This increment
 provides health endpoints plus the [job and queue REST API](http-api.md).
-Worker/runtime APIs, WebSockets, authentication, and a dashboard are not implemented.
+The REST API also includes read-only worker pool and runtime snapshots. WebSockets, authentication, and a dashboard are not implemented.
 
 ## Framework and build
 
