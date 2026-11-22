@@ -16,7 +16,7 @@ Conceptually inspired by task processing systems like Celery and BullMQ, JobQ br
 - **Crash Recovery:** Startup recovery pipeline reconciling latest job states and automatically re-enqueuing interrupted and pending tasks.
 - **Multi-Command CLI:** Full-featured command-line tool (`jobq_cli`) supporting `submit`, `list`, `status`, `run`, and `metrics` commands.
 - **Metrics & Observability:** Thread-safe execution counters, monotonic latency measurements (`steady_clock`), real-time throughput calculations, and Schema Version 1 structured JSON export.
-- **Comprehensive Testing:** 42 automated test suites and four public API example checks integrated with CTest, including multi-threaded concurrency proofs using `std::latch`.
+- **Comprehensive Testing:** 44 automated test suites and four public API example checks integrated with CTest, including multi-threaded concurrency proofs using `std::latch`.
 
 ---
 
@@ -85,7 +85,7 @@ cmake --build build
 ```powershell
 ctest --test-dir build --output-on-failure
 ```
-With examples enabled, all 46 CTest entries should pass cleanly.
+With examples enabled, all 48 CTest entries should pass cleanly on Windows or POSIX.
 
 ---
 
@@ -222,8 +222,15 @@ execution durations, elapsed collector time, and finished-attempt throughput.
 `monitor 100 3` takes three samples. Intervals must be 1–10000 ms, counts 1–60,
 with at most 60000 ms of requested waits. It reports cumulative snapshots and
 interval deltas/rates using measured steady-clock time, then returns to the prompt.
-Worker activity and individual worker details are unavailable. Advanced runtime
-management commands remain planned additions. The existing argument-based
+Exit, quit, EOF, and supported signals converge on one shutdown path. Ctrl+C
+and Windows Ctrl+Break cancel idle input and monitoring; SIGINT/SIGTERM are
+handled on POSIX. Workers drain accepted work and scheduled retries before joining.
+Monitoring waits check cancellation at most every 25 ms; graceful draining can
+take longer. Normal/EOF exits return 0; observed signals return 128 + signal
+(130 for SIGINT, 143 for SIGTERM, 149 for Windows Ctrl+Break), and failures return 1.
+Windows console close/logoff/shutdown events and forced process termination do
+not carry a drain guarantee. See the CLI guide for platform and embedding limits.
+Worker activity and individual worker details remain unavailable. The existing argument-based
 commands below operate as one-shot commands. Launching without a command retains
 the existing usage error, and `jobq` remains the separate demonstration executable.
 See the [CLI guide](docs/cli-reference.md) for input syntax and runtime behavior.
@@ -397,7 +404,7 @@ Detailed technical documentation is available in the [`docs/`](docs/README.md) d
 - Fully functioning in-process background job processing engine.
 - Single-host file journal persistence and crash recovery.
 - Multi-command CLI and Schema v1 JSON runtime metrics.
-- 42 automated test suites plus four runnable public API example checks.
+- 44 automated test suites plus four runnable public API example checks.
 
 ### Current Limitations
 - **Single Process / Local Host:** JobQ currently coordinates jobs within a single process. It does not provide distributed queue coordination across multiple independent server processes or network clusters.

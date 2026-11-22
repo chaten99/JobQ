@@ -3,6 +3,7 @@
 #include "cli/InteractiveRuntime.h"
 
 #include <iostream>
+#include <exception>
 #include <string>
 #include <vector>
 
@@ -16,8 +17,15 @@ int main(int argc, char* argv[]) {
             std::cerr << "Error: interactive does not accept arguments.\n";
             return jobq::cli::kUsageErrorExitCode;
         }
-        jobq::cli::InteractiveRuntime runtime;
-        return runtime.run(std::cin, std::cout, std::cerr);
+        try {
+            jobq::cli::InteractiveRuntime runtime;
+            return runtime.runTerminal(std::cout, std::cerr);
+        } catch (const std::exception& error) {
+            std::cerr << "Unable to initialize interactive CLI: " << error.what() << '\n';
+        } catch (...) {
+            std::cerr << "Unable to initialize interactive CLI: unknown error.\n";
+        }
+        return jobq::cli::kCommandErrorExitCode;
     }
 
     std::vector<std::string> arguments;
