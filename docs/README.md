@@ -48,7 +48,8 @@ Welcome to the **JobQ** documentation suite. This index links to the architectur
 
 ---
 
-## 8. CLI
+## 8. CLI and HTTP Hosts
+- **[HTTP Server Foundation](http-server.md):** Optional Drogon build, configuration, health endpoints, Engine ownership, and lifecycle/platform limits.
 - **[Interactive CLI Guide](interactive-cli.md):** Persistent workflow, handler setup, commands, monitoring, storage, shutdown, and platform evidence.
 - **[CLI Reference Guide](cli-reference.md):** `jobq_cli` subcommands (`submit`, `list`, `status`, `run`, `metrics`), flags, and output formats.
 

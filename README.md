@@ -90,6 +90,15 @@ POSIX signal coverage is registered conditionally and requires host verification
 
 ---
 
+## HTTP Server Foundation
+
+The optional [Drogon HTTP server](docs/http-server.md) adds a separate
+`jobq_server` host with only `/health/live` and `/health/ready` at this stage.
+Enable it using `-DJOBQ_BUILD_SERVER=ON` with the documented prerequisites;
+default library/CLI builds stay dependency-free. It binds `127.0.0.1:8080` by
+default and owns its own Engine, separate from the CLI process. REST job APIs,
+WebSockets, and a dashboard remain future increments.
+
 ## Public C++ API
 
 Use `jobq::Engine` to own and coordinate workers, handlers, submissions, and
