@@ -15,6 +15,12 @@ namespace jobq {
 
 class ContentionMetrics;
 
+struct JobQueueSnapshot {
+    std::size_t readyJobs{0};
+    std::size_t delayedJobs{0};
+    bool closed{false};
+};
+
 class JobQueue {
 public:
     JobQueue() = default;
@@ -43,6 +49,8 @@ public:
     bool empty() const;
 
     std::size_t size() const;
+
+    JobQueueSnapshot snapshot() const;
 
 private:
     using Clock = std::chrono::steady_clock;

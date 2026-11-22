@@ -43,7 +43,7 @@ EngineConfig validateConfig(EngineConfig config) {
 }
 
 struct Engine::Impl {
-    enum class State { Created, Starting, Running, Stopping, Stopped };
+    using State = EngineState;
 
     explicit Impl(EngineConfig config)
         : pool(queue, executor, config.workerCount, metrics) {
@@ -182,9 +182,39 @@ JobMetricsSnapshot Engine::metrics() const {
     return impl_->metrics.snapshot();
 }
 
+std::optional<JobSnapshot> Engine::getJob(JobId id) const {
+    std::lock_guard lock(impl_->mutex);
+    const auto job = impl_->manager->getJob(id);
+    return job ? std::optional<JobSnapshot>(job->snapshot()) : std::nullopt;
+}
+
+std::vector<JobSnapshot> Engine::listJobs() const {
+    std::lock_guard lock(impl_->mutex);
+    return impl_->manager->listJobs();
+}
+
 bool Engine::isRunning() const {
     std::lock_guard lock(impl_->mutex);
     return impl_->state == Impl::State::Running;
+}
+
+EngineSnapshot Engine::snapshot() const {
+    EngineSnapshot result;
+    {
+        std::lock_guard lock(impl_->mutex);
+        result.state = impl_->state;
+    }
+    const auto workers = impl_->pool.snapshot();
+    result.workerCount = workers.workerCount;
+    result.workersStarted = workers.started;
+    result.workersStopping = workers.stopping;
+    result.workersStopped = workers.stopped;
+    const auto queue = impl_->queue.snapshot();
+    result.readyJobs = queue.readyJobs;
+    result.delayedJobs = queue.delayedJobs;
+    result.queueClosed = queue.closed;
+    result.metrics = impl_->metrics.snapshot();
+    return result;
 }
 
 }

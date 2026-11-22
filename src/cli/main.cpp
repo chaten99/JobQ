@@ -1,11 +1,33 @@
 #include "cli/CommandHandlers.h"
 #include "cli/CommandLine.h"
+#include "cli/InteractiveRuntime.h"
 
 #include <iostream>
+#include <exception>
 #include <string>
 #include <vector>
 
 int main(int argc, char* argv[]) {
+    if (argc > 1 && std::string(argv[1]) == "interactive") {
+        if (argc == 3 && (std::string(argv[2]) == "--help" || std::string(argv[2]) == "-h")) {
+            std::cout << "Usage: jobq_cli interactive\nStart a persistent session. Use help to list its commands.\n";
+            return jobq::cli::kSuccessExitCode;
+        }
+        if (argc != 2) {
+            std::cerr << "Error: interactive does not accept arguments.\n";
+            return jobq::cli::kUsageErrorExitCode;
+        }
+        try {
+            jobq::cli::InteractiveRuntime runtime;
+            return runtime.runTerminal(std::cout, std::cerr);
+        } catch (const std::exception& error) {
+            std::cerr << "Unable to initialize interactive CLI: " << error.what() << '\n';
+        } catch (...) {
+            std::cerr << "Unable to initialize interactive CLI: unknown error.\n";
+        }
+        return jobq::cli::kCommandErrorExitCode;
+    }
+
     std::vector<std::string> arguments;
 
     arguments.reserve(

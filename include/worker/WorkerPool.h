@@ -16,6 +16,13 @@ namespace jobq {
 class ExecutionObserver;
 class JobMetrics;
 
+struct WorkerPoolSnapshot {
+    std::size_t workerCount{0};
+    bool started{false};
+    bool stopping{false};
+    bool stopped{false};
+};
+
 class WorkerPool {
 public:
     WorkerPool(
@@ -53,6 +60,8 @@ public:
     bool isStarted() const;
 
     bool isStopped() const;
+
+    WorkerPoolSnapshot snapshot() const;
 
 private:
     void initializeWorkers(std::size_t workerCount);

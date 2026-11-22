@@ -1,5 +1,11 @@
 # JobQ System Architecture
 
+The [interactive CLI](interactive-cli.md) owns a public Engine throughout each
+session. Parsing and registry dispatch are separate from worker execution;
+commands reuse the manager, queue, pool, metrics, and safe value snapshots.
+One coordinator handles admission closure, cancellation, and Engine stop.
+The reusable library remains independent of terminal input and CLI signals.
+
 JobQ is a multithreaded, in-process job queue and execution engine implemented in modern C++20. This document details the component architecture, execution pipelines, data flow, threading models, and subsystem interactions.
 
 ---

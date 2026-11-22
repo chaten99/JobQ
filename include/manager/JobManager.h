@@ -8,6 +8,7 @@
 #include <shared_mutex>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "job/Job.h"
 #include "queue/JobQueue.h"
@@ -68,6 +69,8 @@ public:
     std::shared_ptr<Job> getJob(uint64_t id) const;
 
     std::optional<JobStatus> getStatus(uint64_t id) const;
+
+    std::vector<JobSnapshot> listJobs() const;
 
     std::size_t totalJobs() const;
 

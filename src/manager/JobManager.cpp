@@ -2,6 +2,7 @@
 #include "manager/JobManager.h"
 
 #include <limits>
+#include <algorithm>
 #include <mutex>
 #include <stdexcept>
 #include <string>
@@ -329,6 +330,26 @@ std::optional<JobStatus> JobManager::getStatus(
 std::size_t JobManager::totalJobs() const {
     MeasuredSharedLock lock(registryMutex_, contention_, LockCategory::JobRegistry);
     return jobs_.size();
+}
+
+std::vector<JobSnapshot> JobManager::listJobs() const {
+    std::vector<std::shared_ptr<Job>> jobs;
+    {
+        MeasuredSharedLock lock(registryMutex_, contention_, LockCategory::JobRegistry);
+        jobs.reserve(jobs_.size());
+        for (const auto& [id, job] : jobs_) {
+            jobs.push_back(job);
+        }
+    }
+    std::vector<JobSnapshot> result;
+    result.reserve(jobs.size());
+    for (const auto& job : jobs) {
+        result.push_back(job->snapshot());
+    }
+    std::sort(result.begin(), result.end(), [](const auto& first, const auto& second) {
+        return first.id < second.id;
+    });
+    return result;
 }
 
 } // namespace jobq
