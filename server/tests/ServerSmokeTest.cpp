@@ -132,6 +132,14 @@ namespace
             ensure(port != 0, "Ephemeral listener must expose the actual bound port");
             validateHealth(request(port, "/health/live"), "ok");
             validateHealth(request(port, "/health/ready"), "ready");
+            const auto inspectRuntime = [&] {
+                const auto runtime = request(port, "/api/v1/runtime");
+                const auto workers = request(port, "/api/v1/workers");
+                ensure(runtime.find("200 OK") != std::string::npos && runtime.find("uptime_seconds") != std::string::npos &&
+                       workers.find("200 OK") != std::string::npos && workers.find("configured_workers") != std::string::npos,
+                       "Subprocess exposes runtime and worker snapshots");
+            };
+            inspectRuntime();
             const auto oversized = request(port, "/api/v1/jobs", std::string(rest ? 8192 : 64, 'x'), "POST");
             ensure(oversized.find("413") != std::string::npos,
                    "Configured request body limit must be enforced by Drogon");
@@ -158,6 +166,7 @@ namespace
                 }
                 ensure(completed && request(port, "/api/v1/queue").find("200 OK") != std::string::npos,
                        "Process handler must complete and queue remain inspectable");
+                inspectRuntime();
             }
             ensure(request(port, "/jobs").find("404") != std::string::npos, "The unversioned /jobs route remains absent");
             FreeConsole();

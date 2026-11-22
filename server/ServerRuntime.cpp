@@ -1,5 +1,6 @@
 #include "ServerRuntime.h"
 #include "HealthRoutes.h"
+#include "InspectionRoutes.h"
 #include "ApiRoutes.h"
 
 #include <atomic>
@@ -166,6 +167,22 @@ namespace jobq::server
     ServerContext::ServerContext(const ServerConfig &config) : engine({.workerCount = config.engineWorkers, .storagePath = config.storagePath}) {}
     bool ServerContext::ready() const { return listening.load() && !stopping.load() && engine.isRunning(); }
 
+    void ServerContext::markListening()
+    {
+        readyTicks_.store(std::chrono::steady_clock::now().time_since_epoch().count());
+        listening.store(true);
+    }
+
+    std::chrono::seconds ServerContext::uptime() const
+    {
+        using Clock = std::chrono::steady_clock;
+        const auto ticks = readyTicks_.load();
+        if (ticks == 0)
+            return {};
+        const auto readyAt = Clock::time_point{Clock::duration{ticks}};
+        return std::chrono::duration_cast<std::chrono::seconds>(Clock::now() - readyAt);
+    }
+
     ServerRuntime::ServerRuntime(ServerConfig config, std::function<void(Engine &)> initialize)
         : config_(std::move(config)), initialize_(std::move(initialize))
     {
@@ -220,6 +237,7 @@ namespace jobq::server
             app.disableSigtermHandling().setThreadNum(config_.httpThreads).setClientMaxBodySize(config_.maxBodyBytes).setClientMaxMemoryBodySize(config_.maxBodyBytes).setMaxConnectionNum(config_.maxConnections).setMaxConnectionNumPerIP(config_.maxConnections).setLogLevel(trantor::Logger::kWarn).setServerHeaderField("").setFileTypes({}).setIdleConnectionTimeout(30).addListener(config_.address, config_.port);
             registerHealthRoutes(context_);
             registerApiRoutes(context_);
+            registerInspectionRoutes(context_);
             configured = true;
             app.registerBeginningAdvice([&, context = context_]
                                         {
@@ -255,7 +273,7 @@ namespace jobq::server
                     *pending = false;
                     if (status == drogon::ReqResult::Ok && response && response->statusCode() == drogon::k200OK &&
                         !context->stopping.load()) {
-                        context->listening.store(true);
+                        context->markListening();
                         client->reset();
                         try {
                             output << "JobQ HTTP server ready on " << config_.address << ':' << port << '\n' << std::flush;

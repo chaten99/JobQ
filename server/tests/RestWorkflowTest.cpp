@@ -1,4 +1,5 @@
 #include "ServerRuntime.h"
+#include "jobq/Version.h"
 
 #include <drogon/drogon.h>
 #include <trantor/net/EventLoopThread.h>
@@ -54,21 +55,52 @@ int main() {
             if (bound.wait_for(5s) != std::future_status::ready) throw std::runtime_error("Listener never initialized");
             trantor::EventLoopThread loop;
             loop.run();
-            auto http = drogon::HttpClient::newHttpClient("http://127.0.0.1:" + std::to_string(bound.get()), loop.getLoop());
+            const auto address = "http://127.0.0.1:" + std::to_string(bound.get());
+            auto http = drogon::HttpClient::newHttpClient(address, loop.getLoop());
+            auto secondClient = drogon::HttpClient::newHttpClient(address, loop.getLoop());
             auto send = [&](drogon::HttpMethod method, const std::string& path, const std::string& body = "",
-                            const std::string& contentType = "application/json") {
+                            const std::string& contentType = "application/json", const drogon::HttpClientPtr& connection = {}) {
                 auto request = drogon::HttpRequest::newHttpRequest();
                 request->setMethod(method);
                 request->setPath(path);
                 request->setPathEncode(false);
                 if (!body.empty()) request->setBody(body);
                 request->setCustomContentTypeString(contentType);
-                const auto [result, response] = http->sendRequest(request, 3.0);
+                const auto [result, response] = (connection ? connection : http)->sendRequest(request, 3.0);
                 if (result != drogon::ReqResult::Ok || !response) throw std::runtime_error("HTTP request failed");
                 return response;
             };
             check(jobq_test::waitUntil([&] { return send(drogon::Get, "/health/ready")->statusCode() == drogon::k200OK; }),
                   "The HTTP workflow waits for real listener and Engine readiness");
+            auto inspectRuntime = [&](const drogon::HttpClientPtr& connection = {}) {
+                const auto response = send(drogon::Get, "/api/v1/runtime", "", "application/json", connection);
+                const auto body = parsed(response);
+                const auto& data = body["data"];
+                if (response->statusCode() != drogon::k200OK ||
+                    response->getHeader("cache-control") != "no-store" ||
+                    response->getHeader("content-type").find("application/json") == std::string::npos ||
+                    data["server"]["state"] != "running" || data["engine"]["state"] != "running" ||
+                    data["engine"]["accepting_jobs"] != true || data["engine"]["configured_workers"].asUInt64() != 2 ||
+                    data["version"]["jobq"] != std::string(jobq::version::string) ||
+                    !data["server"]["uptime_seconds"].isUInt64() || data["server"].size() != 2) {
+                    throw std::runtime_error("Unexpected runtime snapshot");
+                }
+                return data["server"]["uptime_seconds"].asUInt64();
+            };
+            auto inspectWorkers = [&](const drogon::HttpClientPtr& connection = {}) {
+                const auto response = send(drogon::Get, "/api/v1/workers", "", "application/json", connection);
+                const auto data = parsed(response)["data"];
+                return response->statusCode() == drogon::k200OK && data["state"] == "running" &&
+                       data["configured_workers"].asUInt64() == 2 && data.size() == 2;
+            };
+            const auto initialUptime = inspectRuntime();
+            check(inspectWorkers(), "Workers expose actual configured pool state");
+            for (const auto* path : {"/api/v1/workers", "/api/v1/runtime"}) {
+                const auto invalid = send(drogon::Get, std::string(path) + "?limit=1");
+                check(invalid->statusCode() == drogon::k400BadRequest &&
+                      parsed(invalid)["error"]["code"] == "INVALID_REQUEST", "Inspection rejects query arguments");
+                check(send(drogon::Post, path)->statusCode() == drogon::k405MethodNotAllowed, "Inspection is read-only");
+            }
             const auto empty = parsed(send(drogon::Get, "/api/v1/jobs"));
             check(empty["data"].empty() && empty["pagination"]["limit"].asUInt64() == 50,
                   "Real HTTP empty collection uses default pagination");
@@ -87,6 +119,9 @@ int main() {
                 if (response->statusCode() != drogon::k201Created) throw std::runtime_error("Expected actual HTTP submission: " + std::string(response->body()));
                 return parsed(response)["data"]["id"].asString();
             };
+            auto runtimeReader = std::async(std::launch::async, [&] {
+                return inspectRuntime(secondClient) >= initialUptime;
+            });
             const auto first = submit("BLOCK", "first");
             const auto second = submit("BLOCK", "second");
             check(active.waitAtLeast(2), "Two real workers execute HTTP-submitted jobs");
@@ -95,6 +130,7 @@ int main() {
                   parsed(send(drogon::Get, "/api/v1/jobs/" + pending))["data"]["status"] == "PENDING" &&
                   parsed(send(drogon::Get, "/api/v1/queue"))["data"]["ready"].asUInt64() == 1,
                   "HTTP records distinguish executing jobs from current ready depth");
+            check(runtimeReader.get(), "Runtime inspection stays valid during job submissions");
             const auto page = parsed(send(drogon::Get, "/api/v1/jobs?limit=1&offset=1&status=RUNNING&type=BLOCK"));
             check(page["pagination"]["total"].asUInt64() == 2 && page["data"].size() == 1 && page["data"][0]["id"] == second,
                   "Actual URL filters/pagination preserve deterministic ordering and filtered total");
@@ -103,14 +139,14 @@ int main() {
                     throw std::runtime_error("Concurrent queue inspection changed waiting depth");
                 }
             }
-            auto inspect = [&] {
+            auto inspect = [&](const drogon::HttpClientPtr& connection) {
                 for (int index = 0; index < 10; ++index) {
-                    if (parsed(send(drogon::Get, "/api/v1/queue"))["data"]["ready"].asUInt64() != 1) return false;
+                    if (!inspectWorkers(connection) || inspectRuntime(connection) < initialUptime) return false;
                 }
                 return true;
             };
-            auto readerOne = std::async(std::launch::async, inspect);
-            auto readerTwo = std::async(std::launch::async, inspect);
+            auto readerOne = std::async(std::launch::async, inspect, http);
+            auto readerTwo = std::async(std::launch::async, inspect, secondClient);
             check(readerOne.get() && readerTwo.get(), "Concurrent HTTP readers preserve a real queue snapshot while workers execute");
             for (const auto& query : {"limit=0", "offset=-1", "limit=101", "limit=1&limit=2", "offset=18446744073709551616",
                                      "status=invalid", "type=", "extra=1", "limit=1&"}) {
@@ -143,6 +179,7 @@ int main() {
             check(parsed(send(drogon::Get, "/api/v1/jobs/" + failed))["data"]["status"] == "FAILED" &&
                   parsed(send(drogon::Get, "/api/v1/jobs/" + retried))["data"]["attempts_made"].asUInt64() == 2,
                   "Final API records expose actual failure and retry-success attempts");
+            check(inspectWorkers() && inspectRuntime() > initialUptime, "Uptime advances through the delayed retry workflow");
             const auto final = submit("FINAL", "drain on shutdown");
             check(finalEntered.waitAtLeast(1), "An accepted final job is active before shutdown");
             runtime.requestStop();

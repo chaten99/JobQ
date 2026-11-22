@@ -93,13 +93,13 @@ POSIX signal coverage is registered conditionally and requires host verification
 ## HTTP Server and REST API
 
 The optional [Drogon HTTP server](docs/http-server.md) adds a separate
-`jobq_server` host with health checks and a [job/queue REST API](docs/http-api.md):
-`GET/POST /api/v1/jobs`, `GET /api/v1/jobs/{id}`, and `GET /api/v1/queue`.
+`jobq_server` host with health checks and a [REST API](docs/http-api.md):
+`GET/POST /api/v1/jobs`, `GET /api/v1/jobs/{id}`, `GET /api/v1/queue`, and read-only inspection at
+`GET /api/v1/workers` and `GET /api/v1/runtime`.
 Enable it using `-DJOBQ_BUILD_SERVER=ON` with the documented prerequisites;
 default library/CLI builds stay dependency-free. It binds `127.0.0.1:8080` by
 default and owns its own Engine, separate from the CLI process. Applications must
-register real job handlers; standalone storage is in memory. Worker APIs,
-WebSockets, and a dashboard remain future increments.
+register real job handlers; standalone storage is in memory. WebSockets and a dashboard remain future increments.
 
 ## Public C++ API
 
