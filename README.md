@@ -16,7 +16,7 @@ Conceptually inspired by task processing systems like Celery and BullMQ, JobQ br
 - **Crash Recovery:** Startup recovery pipeline reconciling latest job states and automatically re-enqueuing interrupted and pending tasks.
 - **Multi-Command CLI:** Full-featured command-line tool (`jobq_cli`) supporting `submit`, `list`, `status`, `run`, and `metrics` commands.
 - **Metrics & Observability:** Thread-safe execution counters, monotonic latency measurements (`steady_clock`), real-time throughput calculations, and Schema Version 1 structured JSON export.
-- **Comprehensive Testing:** 44 automated test suites and four public API example checks integrated with CTest, including multi-threaded concurrency proofs using `std::latch`.
+- **Comprehensive Testing:** 45 automated test suites and four public API example checks integrated with CTest, including multi-threaded concurrency proofs using `std::latch`.
 
 ---
 
@@ -85,7 +85,8 @@ cmake --build build
 ```powershell
 ctest --test-dir build --output-on-failure
 ```
-With examples enabled, all 48 CTest entries should pass cleanly on Windows or POSIX.
+With examples enabled, the verified Windows configuration has 49 CTest entries.
+POSIX signal coverage is registered conditionally and requires host verification.
 
 ---
 
@@ -195,45 +196,37 @@ The CLI executable is located at `build/jobq_cli.exe`.
 
 ### Interactive Session
 
+Build and start the persistent CLI:
+
 ```powershell
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+cmake --build build
 .\build\jobq_cli.exe interactive
 ```
 
-This starts one Engine and keeps it running while commands are entered at
-`jobq>`. The available commands are `help [command]`, `status`, `workers`,
-`queue`, `submit <type> <payload>`, `jobs`, `job <job-id>`, `metrics`,
-`monitor [<interval-ms> <sample-count>]`, `exit`, and its alias
-`quit`. Use `help submit`, `help jobs`, or `help job` for job command usage.
-Inspection reports actual lifecycle state, configured
-workers, waiting queue entries, and historical execution counters.
-Empty input is ignored. Unknown commands and invalid arguments report an error
-and leave the session running. Exit or EOF drains the Engine and joins workers.
-Use `jobq_cli interactive --help` for invocation help.
+```text
+help
+status
+workers
+queue
+jobs
+metrics
+monitor 100 3
+exit
+```
 
-The session currently uses the default in-memory Engine configuration and
-registers no job handlers. Applications can supply an Engine initialization
-callback to register real handlers before startup; submission rejects unknown
-types. Quoted payloads preserve spaces and allow empty strings. Job listing and
-lookup use read-only Engine snapshots, ordered by ID, including recovered records
-when storage is configured. See the CLI guide for handler setup and record limits.
-`metrics` displays cumulative submissions, execution attempts, failures, retries,
-execution durations, elapsed collector time, and finished-attempt throughput.
-`monitor` captures a baseline followed by five samples at 1000 ms by default;
-`monitor 100 3` takes three samples. Intervals must be 1–10000 ms, counts 1–60,
-with at most 60000 ms of requested waits. It reports cumulative snapshots and
-interval deltas/rates using measured steady-clock time, then returns to the prompt.
-Exit, quit, EOF, and supported signals converge on one shutdown path. Ctrl+C
-and Windows Ctrl+Break cancel idle input and monitoring; SIGINT/SIGTERM are
-handled on POSIX. Workers drain accepted work and scheduled retries before joining.
-Monitoring waits check cancellation at most every 25 ms; graceful draining can
-take longer. Normal/EOF exits return 0; observed signals return 128 + signal
-(130 for SIGINT, 143 for SIGTERM, 149 for Windows Ctrl+Break), and failures return 1.
-Windows console close/logoff/shutdown events and forced process termination do
-not carry a drain guarantee. See the CLI guide for platform and embedding limits.
-Worker activity and individual worker details remain unavailable. The existing argument-based
-commands below operate as one-shot commands. Launching without a command retains
-the existing usage error, and `jobq` remains the separate demonstration executable.
-See the [CLI guide](docs/cli-reference.md) for input syntax and runtime behavior.
+One Engine stays alive throughout the session. Commands inspect jobs, queues,
+workers, and processing metrics; bounded monitoring returns to the prompt.
+Exit, EOF, and supported signals coordinate graceful draining and worker joining.
+The standalone session uses in-memory storage and registers no application
+handlers. Applications can register real handlers through the startup callback
+before using `submit <type> <payload>`. Jobs survive restarts only when a host
+configures journal storage. `jobq` remains the separate demonstration executable;
+one-shot CLI commands below retain their behavior.
+
+See the [interactive CLI guide](docs/interactive-cli.md) for handler setup,
+commands, storage, signal/exit semantics, platform evidence, and tests, or the
+[detailed CLI reference](docs/cli-reference.md) for individual fields and options.
 
 ### Submit a Job
 ```powershell
@@ -404,7 +397,7 @@ Detailed technical documentation is available in the [`docs/`](docs/README.md) d
 - Fully functioning in-process background job processing engine.
 - Single-host file journal persistence and crash recovery.
 - Multi-command CLI and Schema v1 JSON runtime metrics.
-- 44 automated test suites plus four runnable public API example checks.
+- 45 automated test suites plus four runnable public API example checks.
 
 ### Current Limitations
 - **Single Process / Local Host:** JobQ currently coordinates jobs within a single process. It does not provide distributed queue coordination across multiple independent server processes or network clusters.

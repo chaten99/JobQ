@@ -6,6 +6,24 @@ JobQ maintains high code quality and concurrency reliability through an extensiv
 
 ## 1. Test Architecture
 
+CLI coverage is grouped into parser/dispatcher/runtime, inspection, job management,
+metrics/monitoring, lifecycle, native signal subprocesses, executable sessions,
+and `jobq_cli_end_to_end`. The final workflow uses real handlers, actual returned
+IDs, two workers, waiting/running/failed/retried records, monitoring, and journal
+recovery. Existing reset/rate fixtures and fault tests remain independent.
+Run CLI tests with `ctest --test-dir build -R 'jobq_(cli_|interactive_)' --output-on-failure`.
+Run full Debug then Release suites sequentially with separate build directories;
+legacy tests can share temporary paths across processes. New workflow journals
+use unique TemporaryDirectory instances. Process tests use bounded timeouts;
+Windows fixtures terminate and wait for children on failure. CMake execute_process
+timeouts manage executable-session children.
+
+Windows MinGW UCRT64 GCC 16.2.0 is the executed platform for this CLI stage.
+Native Ctrl+C/Ctrl+Break/EOF and C-runtime SIGTERM subprocess cases run on Windows.
+Conditional POSIX tests are not evidence of Linux/macOS execution; MSVC is also
+unverified. No GitHub Actions workflows exist in this checkout. See the
+[interactive guide](interactive-cli.md#verification-and-platform-evidence).
+
 JobQ uses a modular testing philosophy:
 - **No External Test Framework Dependencies:** Tests are implemented as lightweight C++ executables returning `0` on success and non-zero on failure.
 - **Independent Test Executables:** Each subsystem has dedicated test binaries ensuring isolation and fast parallel execution.
@@ -13,7 +31,11 @@ JobQ uses a modular testing philosophy:
 
 ---
 
-## 2. Test Suite Catalog (28 Registered Tests)
+## 2. Core Test Suite Catalog
+
+The table below catalogs the original core suites. With examples and supported
+platform signal tests enabled, the current root build registers 49 tests.
+Use `ctest --test-dir build -N` for the exact configured inventory.
 
 | # | CTest Name | Source File | Description |
 |---|---|---|---|

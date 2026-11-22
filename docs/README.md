@@ -49,6 +49,7 @@ Welcome to the **JobQ** documentation suite. This index links to the architectur
 ---
 
 ## 8. CLI
+- **[Interactive CLI Guide](interactive-cli.md):** Persistent workflow, handler setup, commands, monitoring, storage, shutdown, and platform evidence.
 - **[CLI Reference Guide](cli-reference.md):** `jobq_cli` subcommands (`submit`, `list`, `status`, `run`, `metrics`), flags, and output formats.
 
 ---

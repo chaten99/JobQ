@@ -188,6 +188,11 @@ include(CTest)
 
 if(BUILD_TESTING)
 
+    add_executable(jobq_cli_end_to_end_test tests/cli_end_to_end_test.cpp)
+    target_link_libraries(jobq_cli_end_to_end_test PRIVATE jobq_cli_runtime)
+    add_test(NAME jobq_cli_end_to_end COMMAND jobq_cli_end_to_end_test)
+    set_tests_properties(jobq_cli_end_to_end PROPERTIES TIMEOUT 30 LABELS "cli;integration")
+
     add_executable(jobq_cli_lifecycle_test tests/cli_lifecycle_test.cpp)
     target_link_libraries(jobq_cli_lifecycle_test PRIVATE jobq_cli_runtime)
     add_test(NAME jobq_cli_lifecycle COMMAND jobq_cli_lifecycle_test)

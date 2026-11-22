@@ -1,5 +1,9 @@
 # C++ API Developer Guide
 
+For a checkout application that hosts a persistent terminal using the same
+Engine, see [interactive handler setup](interactive-cli.md#register-real-handlers).
+Installed library applications remain independent of the CLI runtime.
+
 This guide demonstrates how to embed and use JobQ within your own modern C++20 applications. All examples use actual types and function signatures from the JobQ headers.
 
 ## Public Engine API
