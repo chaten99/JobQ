@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -42,6 +43,15 @@ struct JobSnapshot {
     RetryPolicy retryPolicy;
     std::size_t attemptsMade;
 };
+
+struct JobStatusChange {
+    std::uint64_t id;
+    JobStatus previousStatus;
+    JobStatus status;
+    std::size_t attemptsMade;
+};
+
+using JobStatusListener = std::function<void(JobStatusChange)>;
 
 using JobStateObserver =
     std::function<void(const JobSnapshot&)>;
@@ -99,6 +109,8 @@ public:
     std::chrono::steady_clock::time_point queueReadyTime() const noexcept;
 
 private:
+    friend class JobManager;
+    void notifyStatusChange(JobStatus previous) const noexcept;
     void transitionTo(
         JobStatus expectedCurrent,
         JobStatus newStatus
@@ -117,6 +129,7 @@ private:
     JobStatus status_;
 
     JobStateObserver stateObserver_;
+    std::shared_ptr<const JobStatusListener> statusListener_;
 
     std::atomic<std::chrono::steady_clock::rep> queueReadyTicks_{0};
 };

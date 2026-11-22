@@ -1,4 +1,6 @@
 #include "ServerRuntime.h"
+#include "EventHub.h"
+#include "EventRoutes.h"
 #include "HealthRoutes.h"
 #include "InspectionRoutes.h"
 #include "ApiRoutes.h"
@@ -164,7 +166,12 @@ namespace jobq::server
 
     }
 
-    ServerContext::ServerContext(const ServerConfig &config) : engine({.workerCount = config.engineWorkers, .storagePath = config.storagePath}) {}
+    ServerContext::ServerContext(const ServerConfig &config)
+        : events(std::make_shared<EventHub>()),
+          engine({.workerCount = config.engineWorkers, .storagePath = config.storagePath},
+                 [hub = std::weak_ptr<EventHub>(events)](JobStatusChange change) {
+                     if (const auto publisher = hub.lock()) publisher->publish(change);
+                 }) {}
     bool ServerContext::ready() const { return listening.load() && !stopping.load() && engine.isRunning(); }
 
     void ServerContext::markListening()
@@ -200,8 +207,11 @@ namespace jobq::server
 
     void ServerContext::requestStop()
     {
-        std::lock_guard lock(admission_);
-        stopping.store(true);
+        {
+            std::lock_guard lock(admission_);
+            stopping.store(true);
+        }
+        events->close();
     }
     void ServerRuntime::requestStop() noexcept { context_->requestStop(); }
     bool ServerRuntime::ready() const { return context_->ready(); }
@@ -238,6 +248,8 @@ namespace jobq::server
             registerHealthRoutes(context_);
             registerApiRoutes(context_);
             registerInspectionRoutes(context_);
+            registerEventRoutes(context_);
+            app.setClientMaxWebSocketMessageSize(4096);
             configured = true;
             app.registerBeginningAdvice([&, context = context_]
                                         {
@@ -257,7 +269,12 @@ namespace jobq::server
                     app.quit();
                     return;
                 }
-                if (context->listening.load() || *pending) return;
+                if (context->listening.load()) {
+                    try { context->events->flush(); }
+                    catch (...) { context->events->close(); }
+                    return;
+                }
+                if (*pending) return;
                 if (std::chrono::steady_clock::now() > deadline) {
                     result = 1;
                     try { errors << "Listener readiness probe timed out.\n"; } catch (...) { }

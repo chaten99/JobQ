@@ -2,12 +2,12 @@
 
 `jobq_server` is a separate host for the reusable JobQ Engine. This increment
 provides health endpoints plus the [job and queue REST API](http-api.md).
-The REST API also includes read-only worker pool and runtime snapshots. WebSockets, authentication, and a dashboard are not implemented.
+The REST API also includes read-only worker pool and runtime snapshots. [WebSocket events](http-events.md) report live job status changes. Authentication and a dashboard remain future increments.
 
 ## Framework and build
 
 The server uses [Drogon 1.9.14](https://github.com/drogonframework/drogon/releases/tag/v1.9.14),
-an asynchronous C++ HTTP framework with JSON/routing and future WebSocket support.
+an asynchronous C++ HTTP framework with JSON, routing, and WebSocket support.
 The pinned tag resolves to `3aae769cc405cf5abb9d477675c6430924f02c7c` and brings
 Trantor at `78e480f5e138acdc05f76c55a2716718cd846364` (1.5.29). It compiles with
 JobQ's C++20/UCRT64 toolchain. Framework platform support is not evidence of local

@@ -353,6 +353,66 @@ void testPersistenceConfiguration() {
     }, "Invalid job storage record"), "Recovery errors propagate from construction");
 }
 
+void testJobStatusListener() {
+    jobq_test::TemporaryDirectory directory("status_listener");
+    std::vector<jobq::JobStatusChange> changes;
+    jobq::Engine engine({.workerCount = 1, .storagePath = directory.journal()},
+        [&](jobq::JobStatusChange change) {
+            changes.push_back(change);
+            throw std::runtime_error("delivery failed");
+        });
+    engine.registerHandler("TASK", [](const jobq::Job& job) {
+        if (job.getAttemptsMade() == 1) throw std::runtime_error("retry");
+    });
+    engine.start();
+    jobq::JobOptions options;
+    options.retryPolicy.maxRetries = 1;
+    options.retryPolicy.initialDelay = 0ms;
+    const auto id = engine.submit("TASK", "", options);
+    engine.stop();
+    using enum jobq::JobStatus;
+    const std::vector expected{Running, Failed, Pending, Running, Completed};
+    check(changes.size() == expected.size() && engine.getStatus(id) == Completed,
+          "Status listener delivery failures do not interrupt persistent job transitions");
+    if (changes.size() == expected.size()) {
+        for (std::size_t i = 0; i < changes.size(); ++i) {
+            check(changes[i].id == id && changes[i].previousStatus == (i == 0 ? Pending : expected[i - 1]) &&
+                  changes[i].status == expected[i] && changes[i].attemptsMade == (i < 3 ? 1u : 2u),
+                  "Observer reports the committed status, previous status and actual attempt");
+        }
+    }
+    jobq::Engine recovered({.storagePath = directory.journal()});
+    check(recovered.getStatus(id) == Completed, "Listener does not replace the persistence observer");
+}
+
+void testFailedTransitionDoesNotNotify() {
+    jobq_test::TemporaryDirectory directory("status_listener_failure");
+    const auto journal = directory.journal();
+    jobq_test::Counter entered;
+    jobq_test::Gate release;
+    std::vector<jobq::JobStatusChange> changes;
+    jobq::Engine engine({.workerCount = 1, .storagePath = journal},
+        [&](jobq::JobStatusChange change) { changes.push_back(change); });
+    engine.registerHandler("TASK", [&](const jobq::Job&) {
+        entered.add();
+        if (!release.wait()) throw std::runtime_error("Release timed out");
+    });
+    engine.start();
+    const auto id = engine.submit("TASK", "");
+    if (!entered.waitAtLeast(1)) {
+        release.open();
+        check(false, "Job enters running before forcing the storage failure");
+        return;
+    }
+    std::filesystem::rename(journal, journal.string() + ".saved");
+    std::filesystem::create_directory(journal);
+    release.open();
+    engine.stop();
+    check(engine.getStatus(id) == jobq::JobStatus::Running && changes.size() == 1 &&
+          changes.front().status == jobq::JobStatus::Running,
+          "A persistence failure leaves the previous status and emits no uncommitted event");
+}
+
 void testConcurrentStartAndStop() {
     bool stopped = true;
     for (int run = 0; run < 12; ++run) {
@@ -384,6 +444,8 @@ int main() {
         testHandlerReentrancyAndConcurrentStop();
         testConcurrentSubmissionsAndShutdown();
         testPersistenceConfiguration();
+        testJobStatusListener();
+        testFailedTransitionDoesNotNotify();
         testConcurrentStartAndStop();
     } catch (const std::exception& error) {
         check(false, error.what());

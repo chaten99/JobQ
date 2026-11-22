@@ -45,17 +45,13 @@ EngineConfig validateConfig(EngineConfig config) {
 struct Engine::Impl {
     using State = EngineState;
 
-    explicit Impl(EngineConfig config)
+    Impl(EngineConfig config, JobStatusListener listener)
         : pool(queue, executor, config.workerCount, metrics) {
-        if (config.storagePath.empty()) {
-            manager.emplace(queue, metrics);
-        } else {
-            manager.emplace(
-                queue,
-                std::make_shared<FileJobStorage>(std::move(config.storagePath)),
-                metrics
-            );
+        std::shared_ptr<JobStorage> storage;
+        if (!config.storagePath.empty()) {
+            storage = std::make_shared<FileJobStorage>(std::move(config.storagePath));
         }
+        manager.emplace(queue, std::move(storage), metrics, std::move(listener));
     }
 
     void finishTransition(State next) {
@@ -78,7 +74,11 @@ struct Engine::Impl {
 };
 
 Engine::Engine(EngineConfig config)
-    : impl_(std::make_unique<Impl>(validateConfig(std::move(config)))) {
+    : Engine(std::move(config), {}) {
+}
+
+Engine::Engine(EngineConfig config, JobStatusListener listener)
+    : impl_(std::make_unique<Impl>(validateConfig(std::move(config)), std::move(listener))) {
 }
 
 Engine::~Engine() noexcept {

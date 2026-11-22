@@ -111,6 +111,13 @@ JobManager::JobManager(
     restoreStoredJobs();
 }
 
+JobManager::JobManager(JobQueue& queue, std::shared_ptr<JobStorage> storage,
+                       JobMetrics& metrics, JobStatusListener listener)
+    : queue_(queue), storage_(std::move(storage)), metrics_(&metrics) {
+    if (listener) statusListener_ = std::make_shared<const JobStatusListener>(std::move(listener));
+    if (storage_) restoreStoredJobs();
+}
+
 void JobManager::restoreStoredJobs() {
     const auto records = storage_->loadAll();
 
@@ -162,6 +169,7 @@ void JobManager::restoreStoredJobs() {
             createStateObserver()
         );
 
+        job->statusListener_ = statusListener_;
         jobs_.emplace(record.id, job);
 
         if (job->getStatus() == JobStatus::Running) {
@@ -251,6 +259,7 @@ std::shared_ptr<Job> JobManager::createJob(
         createStateObserver()
     );
 
+    job->statusListener_ = statusListener_;
     {
         MeasuredExclusiveLock lock(registryMutex_, contention_, LockCategory::JobRegistry);
         jobs_.emplace(id, job);

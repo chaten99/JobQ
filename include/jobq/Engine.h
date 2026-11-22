@@ -20,6 +20,7 @@ using JobHandler = std::function<void(const Job&)>;
 class Engine {
 public:
     explicit Engine(EngineConfig config = {});
+    Engine(EngineConfig config, JobStatusListener listener);
     ~Engine() noexcept;
 
     Engine(const Engine&) = delete;
