@@ -1,5 +1,6 @@
 #include "ServerRuntime.h"
 #include "HealthRoutes.h"
+#include "ApiRoutes.h"
 
 #include <atomic>
 #include <chrono>
@@ -27,7 +28,7 @@ namespace jobq::server
     {
 
         std::atomic<int> signalRequest{0};
-    std::atomic<bool> frameworkClaimed{false};
+        std::atomic<bool> frameworkClaimed{false};
         static_assert(std::atomic<int>::is_always_lock_free);
         extern "C" void notifySignal(int number) { signalRequest.store(number, std::memory_order_relaxed); }
 #ifdef _WIN32
@@ -162,7 +163,7 @@ namespace jobq::server
 
     }
 
-    ServerContext::ServerContext(const ServerConfig &config) : engine({.workerCount = config.engineWorkers}) {}
+    ServerContext::ServerContext(const ServerConfig &config) : engine({.workerCount = config.engineWorkers, .storagePath = config.storagePath}) {}
     bool ServerContext::ready() const { return listening.load() && !stopping.load() && engine.isRunning(); }
 
     ServerRuntime::ServerRuntime(ServerConfig config, std::function<void(Engine &)> initialize)
@@ -172,7 +173,20 @@ namespace jobq::server
         context_ = std::make_shared<ServerContext>(config_);
     }
 
-    void ServerRuntime::requestStop() noexcept { context_->stopping.store(true); }
+    JobId ServerContext::submit(std::string type, std::string payload, JobOptions options)
+    {
+        std::lock_guard lock(admission_);
+        if (!ready())
+            throw std::logic_error("Server submissions are closed");
+        return engine.submit(std::move(type), std::move(payload), options);
+    }
+
+    void ServerContext::requestStop()
+    {
+        std::lock_guard lock(admission_);
+        stopping.store(true);
+    }
+    void ServerRuntime::requestStop() noexcept { context_->requestStop(); }
     bool ServerRuntime::ready() const { return context_->ready(); }
 
     int ServerRuntime::run(std::ostream &output, std::ostream &errors)
@@ -183,7 +197,8 @@ namespace jobq::server
             return 1;
         }
         auto &app = drogon::app();
-        if (frameworkClaimed.exchange(true)) {
+        if (frameworkClaimed.exchange(true))
+        {
             errors << "Drogon supports one server runtime per process.\n";
             return 1;
         }
@@ -204,6 +219,7 @@ namespace jobq::server
             context_->engine.start();
             app.disableSigtermHandling().setThreadNum(config_.httpThreads).setClientMaxBodySize(config_.maxBodyBytes).setClientMaxMemoryBodySize(config_.maxBodyBytes).setMaxConnectionNum(config_.maxConnections).setMaxConnectionNumPerIP(config_.maxConnections).setLogLevel(trantor::Logger::kWarn).setServerHeaderField("").setFileTypes({}).setIdleConnectionTimeout(30).addListener(config_.address, config_.port);
             registerHealthRoutes(context_);
+            registerApiRoutes(context_);
             configured = true;
             app.registerBeginningAdvice([&, context = context_]
                                         {
@@ -218,7 +234,7 @@ namespace jobq::server
             const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{5};
             pollingTimer = app.getLoop()->runEvery(0.025, [&, context, client, pending, port, deadline] {
                 if (signalRequest.load() || context->stopping.load()) {
-                    context->stopping.store(true);
+                    context->requestStop();
                     context->listening.store(false);
                     app.quit();
                     return;
@@ -227,7 +243,7 @@ namespace jobq::server
                 if (std::chrono::steady_clock::now() > deadline) {
                     result = 1;
                     try { errors << "Listener readiness probe timed out.\n"; } catch (...) { }
-                    context->stopping.store(true);
+                    context->requestStop();
                     app.quit();
                     return;
                 }
@@ -243,14 +259,15 @@ namespace jobq::server
                         client->reset();
                         try {
                             output << "JobQ HTTP server ready on " << config_.address << ':' << port << '\n' << std::flush;
-                            if (!output) { result = 1; context->stopping.store(true); }
-                        } catch (...) { result = 1; context->stopping.store(true); }
+                            if (!output) { result = 1; context->requestStop(); }
+                        } catch (...) { result = 1; context->requestStop(); }
                     }
                 }, 1.0);
             }); });
             app.run();
-            if (pollingTimer != trantor::InvalidTimerId) app.getLoop()->invalidateTimer(pollingTimer);
-            context_->stopping.store(true);
+            if (pollingTimer != trantor::InvalidTimerId)
+                app.getLoop()->invalidateTimer(pollingTimer);
+            context_->requestStop();
             context_->listening.store(false);
             context_->engine.stop();
             if (!signals.restore())
@@ -265,7 +282,7 @@ namespace jobq::server
         }
         catch (const std::exception &error)
         {
-            context_->stopping.store(true);
+            context_->requestStop();
             context_->listening.store(false);
             try
             {
@@ -276,7 +293,8 @@ namespace jobq::server
             }
             if (configured && app.isRunning())
                 app.quit();
-            if (pollingTimer != trantor::InvalidTimerId) app.getLoop()->invalidateTimer(pollingTimer);
+            if (pollingTimer != trantor::InvalidTimerId)
+                app.getLoop()->invalidateTimer(pollingTimer);
             try
             {
                 context_->engine.stop();
@@ -295,13 +313,33 @@ namespace jobq::server
         }
         catch (...)
         {
-            context_->stopping.store(true);
+            context_->requestStop();
             context_->listening.store(false);
-            try { errors << "HTTP runtime failure: unknown exception.\n"; } catch (...) { }
-            if (configured && app.isRunning()) app.quit();
-            if (pollingTimer != trantor::InvalidTimerId) app.getLoop()->invalidateTimer(pollingTimer);
-            try { context_->engine.stop(); }
-            catch (...) { try { errors << "Engine cleanup failure.\n"; } catch (...) { } }
+            try
+            {
+                errors << "HTTP runtime failure: unknown exception.\n";
+            }
+            catch (...)
+            {
+            }
+            if (configured && app.isRunning())
+                app.quit();
+            if (pollingTimer != trantor::InvalidTimerId)
+                app.getLoop()->invalidateTimer(pollingTimer);
+            try
+            {
+                context_->engine.stop();
+            }
+            catch (...)
+            {
+                try
+                {
+                    errors << "Engine cleanup failure.\n";
+                }
+                catch (...)
+                {
+                }
+            }
             result = 1;
         }
         return result;

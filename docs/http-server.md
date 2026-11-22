@@ -1,8 +1,8 @@
 # JobQ HTTP server foundation
 
 `jobq_server` is a separate host for the reusable JobQ Engine. This increment
-provides **only GET /health/live and GET /health/ready**. Job/queue/worker APIs,
-WebSockets, authentication, and a dashboard are not implemented.
+provides health endpoints plus the [job and queue REST API](http-api.md).
+Worker/runtime APIs, WebSockets, authentication, and a dashboard are not implemented.
 
 ## Framework and build
 
@@ -107,7 +107,9 @@ process; the runtime rejects repeated runs or a second host in that process.
 `jobq_cli` and `jobq_server` are different OS processes. Each owns its own Engine;
 they do not share in-memory jobs or workers. The library is common implementation,
 not a distributed backend. The server currently uses in-memory Engine storage and
-registers no application handlers. No journal flag or job submission API is added.
+registers no application handlers. The REST submission route rejects unknown types.
+Checkout hosts can set ServerConfig::storagePath for existing Engine recovery;
+no journal command-line flag is added.
 
 Startup validates arguments, checks listener bind availability, initializes and
 starts Engine, registers routes/limits/listener, then runs Drogon. A bounded
@@ -162,3 +164,8 @@ not public internet. Build-time dependency fetching requires network separately.
 
 Library/CLI/demo targets and installed JobQ package exports remain unchanged.
 The optional dependency's tests and tools are not included in JobQ's CTest suite.
+
+The REST increment also adds response/validation/snapshot serialization helpers,
+a shutdown admission gate, and route/HTTP/subprocess workflow tests. A second
+small source-checked framework patch sends pre-routing HTTP parser failures
+through Drogon's configured JSON error handler; body limits remain enforced.

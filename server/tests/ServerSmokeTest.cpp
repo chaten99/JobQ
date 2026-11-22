@@ -39,7 +39,7 @@ namespace
     }
     BOOL WINAPI ignoreControl(DWORD) { return TRUE; }
 
-    std::string request(unsigned port, const std::string &path, const std::string &body = {})
+    std::string request(unsigned port, const std::string &path, const std::string &body = {}, const std::string &method = "GET")
     {
         Socket socket{::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP)};
         ensure(socket.value != INVALID_SOCKET, "Create HTTP socket");
@@ -51,7 +51,7 @@ namespace
         address.sin_port = htons(static_cast<u_short>(port));
         address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
         ensure(connect(socket.value, reinterpret_cast<sockaddr *>(&address), sizeof(address)) == 0, "Connect HTTP socket");
-        const auto text = "GET " + path + " HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\nContent-Length: " +
+        const auto text = method + " " + path + " HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\nContent-Type: application/json\r\nContent-Length: " +
                           std::to_string(body.size()) + "\r\n\r\n" + body;
         ensure(send(socket.value, text.data(), static_cast<int>(text.size()), 0) == static_cast<int>(text.size()), "Send health request");
         std::string result;
@@ -78,7 +78,7 @@ namespace
                "Health JSON must contain actual expected status");
     }
 
-    void run(const std::wstring &executable)
+    void run(const std::wstring &executable, bool rest)
     {
         SECURITY_ATTRIBUTES security{sizeof(security), nullptr, TRUE};
         Handle read, write;
@@ -92,7 +92,8 @@ namespace
         startup.hStdError = write.value;
         startup.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
         PROCESS_INFORMATION process{};
-        auto command = L"\"" + executable + L"\" --port 0 --http-threads 2 --engine-workers 2 --max-body-bytes 32";
+        auto command = L"\"" + executable + L"\" --port 0 --http-threads 2 --engine-workers 2 --max-body-bytes " +
+                       (rest ? std::wstring(L"4096") : std::wstring(L"32"));
         ensure(CreateProcessW(nullptr, command.data(), nullptr, nullptr, TRUE, CREATE_NEW_CONSOLE,
                               nullptr, nullptr, &startup, &process),
                "Start server subprocess");
@@ -131,9 +132,34 @@ namespace
             ensure(port != 0, "Ephemeral listener must expose the actual bound port");
             validateHealth(request(port, "/health/live"), "ok");
             validateHealth(request(port, "/health/ready"), "ready");
-            ensure(request(port, "/health/live", std::string(64, 'x')).find("413") != std::string::npos,
+            const auto oversized = request(port, "/api/v1/jobs", std::string(rest ? 8192 : 64, 'x'), "POST");
+            ensure(oversized.find("413") != std::string::npos,
                    "Configured request body limit must be enforced by Drogon");
-            ensure(request(port, "/jobs").find("404") != std::string::npos, "Future job APIs must not be advertised as implemented");
+            ensure(oversized.find("PAYLOAD_TOO_LARGE") != std::string::npos && oversized.find("application/json") != std::string::npos,
+                   "Oversized API requests should use the JSON error convention");
+            if (rest) {
+                const auto created = request(port, "/api/v1/jobs", "{\"type\":\"ECHO\",\"payload\":\"process payload\"}", "POST");
+                ensure(created.find("201 Created") != std::string::npos, "REST process must accept actual work");
+                std::smatch identifier;
+                ensure(std::regex_search(created, identifier, std::regex("\"id\"[ ]*:[ ]*\"([0-9]+)\"")),
+                       "Capture actual HTTP-created identifier");
+                const auto id = identifier[1].str();
+                ensure(request(port, "/api/v1/jobs").find(id) != std::string::npos,
+                       "Process listing must contain the accepted job");
+                const auto deadline = GetTickCount64() + 5000;
+                bool completed = false;
+                while (GetTickCount64() < deadline) {
+                    const auto record = request(port, "/api/v1/jobs/" + id);
+                    if (record.find("COMPLETED") != std::string::npos && record.find("process payload") != std::string::npos) {
+                        completed = true;
+                        break;
+                    }
+                    ensure(WaitForSingleObject(child.value, 5) == WAIT_TIMEOUT, "Process exited before job completion");
+                }
+                ensure(completed && request(port, "/api/v1/queue").find("200 OK") != std::string::npos,
+                       "Process handler must complete and queue remain inspectable");
+            }
+            ensure(request(port, "/jobs").find("404") != std::string::npos, "The unversioned /jobs route remains absent");
             FreeConsole();
             ensure(AttachConsole(process.dwProcessId), "Attach server console");
             ensure(SetConsoleCtrlHandler(ignoreControl, TRUE), "Protect test controller");
@@ -175,13 +201,13 @@ namespace
 int main(int argc, char **argv)
 {
     WSADATA data;
-    if (argc != 2 || WSAStartup(MAKEWORD(2, 2), &data) != 0)
+    if ((argc != 2 && argc != 3) || WSAStartup(MAKEWORD(2, 2), &data) != 0)
         return 1;
     int result = 0;
     try
     {
         const std::string path = argv[1];
-        run(std::wstring(path.begin(), path.end()));
+        run(std::wstring(path.begin(), path.end()), argc == 3 && std::string(argv[2]) == "--rest");
     }
     catch (const std::exception &error)
     {
