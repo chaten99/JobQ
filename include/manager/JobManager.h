@@ -47,6 +47,9 @@ public:
         JobMetrics& metrics
     );
 
+    JobManager(JobQueue& queue, std::shared_ptr<JobStorage> storage,
+               JobMetrics& metrics, JobStatusListener listener);
+
     void setContentionMetrics(ContentionMetrics* metrics) noexcept;
 
     JobManager(const JobManager&) = delete;
@@ -84,6 +87,7 @@ private:
     JobQueue& queue_;
     std::shared_ptr<JobStorage> storage_;
     JobMetrics* metrics_{nullptr};
+    std::shared_ptr<const JobStatusListener> statusListener_;
 
     std::atomic<uint64_t> nextId_{1};
 

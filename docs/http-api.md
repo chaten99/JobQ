@@ -13,6 +13,8 @@ The default listener is `127.0.0.1:8080`. Health remains available at
 | `GET /api/v1/workers` | Aggregate worker pool lifecycle and configured count. |
 | `GET /api/v1/runtime` | Server and Engine lifecycle, uptime, admission, worker configuration, and JobQ version. |
 
+For live job status notifications, see the [WebSocket events guide](http-events.md).
+
 ## Shared conventions
 
 Successful individual resources use `{"data":{...}}`. Lists add a pagination

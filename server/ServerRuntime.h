@@ -13,9 +13,12 @@
 namespace jobq::server
 {
 
+    class EventHub;
+
     struct ServerContext
     {
         explicit ServerContext(const ServerConfig &config);
+        std::shared_ptr<EventHub> events;
         Engine engine;
         void markListening();
         std::chrono::seconds uptime() const;

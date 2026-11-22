@@ -99,7 +99,7 @@ The optional [Drogon HTTP server](docs/http-server.md) adds a separate
 Enable it using `-DJOBQ_BUILD_SERVER=ON` with the documented prerequisites;
 default library/CLI builds stay dependency-free. It binds `127.0.0.1:8080` by
 default and owns its own Engine, separate from the CLI process. Applications must
-register real job handlers; standalone storage is in memory. WebSockets and a dashboard remain future increments.
+register real job handlers; standalone storage is in memory. [WebSocket events](docs/http-events.md) stream committed job status changes to connected clients.
 
 ## Public C++ API
 
