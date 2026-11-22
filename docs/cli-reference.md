@@ -1,5 +1,8 @@
 # CLI Reference Guide
 
+Start with the [interactive CLI guide](interactive-cli.md) for build/launch steps
+and the complete developer workflow. This page details fields and syntax.
+
 `jobq_cli` is the command-line interface for the JobQ engine. It allows users to submit tasks, inspect job registries, execute worker pools from persistent storage, and export runtime metrics.
 
 ## Interactive runtime

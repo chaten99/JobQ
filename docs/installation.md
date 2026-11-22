@@ -1,5 +1,9 @@
 # Installation and Setup Guide
 
+For the persistent terminal workflow after building, see the
+[interactive CLI guide](interactive-cli.md). The `jobq_cli interactive` entry
+point is distinct from one-shot commands and the `jobq` demonstration.
+
 This guide describes how to set up the development environment, configure, build, and test **JobQ** on your system.
 
 ---

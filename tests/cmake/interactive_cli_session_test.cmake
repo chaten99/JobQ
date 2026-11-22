@@ -52,7 +52,22 @@ endfunction()
 
 run_session(commands "help\nstatus\nworkers\nqueue\nmetrics\nmonitor 100 3\nmetrics\ninvalid-command\nstatus\nhelp\nexit\n")
 run_session(eof "")
+run_session(final_line "status")
 run_session(quit "quit\n")
+
+set(recovery_input "${JOBQ_SESSION_TEST_DIR}/errors.txt")
+file(WRITE "${recovery_input}" "invalid-command\nsubmit\nsubmit UNKNOWN data\njob invalid-id\njob 18446744073709551615\nsubmit TYPE 'broken\nmonitor invalid 3\nmonitor 100 0\nmetrics extra\nhelp unknown-command\nstatus\nexit\n")
+execute_process(COMMAND "${JOBQ_CLI}" interactive INPUT_FILE "${recovery_input}"
+    OUTPUT_VARIABLE output ERROR_VARIABLE error RESULT_VARIABLE result TIMEOUT 10)
+if(NOT result EQUAL 0 OR NOT output MATCHES "JobQ Runtime Status" OR NOT output MATCHES "Runtime stopped")
+    message(FATAL_ERROR "Process did not recover from invalid commands\n${output}\n${error}")
+endif()
+foreach(expected IN ITEMS "Unknown command" "Usage: submit" "No handler registered" "Usage: job"
+                          "Job not found" "Unterminated" "Usage: monitor" "Usage: metrics" "Unknown help topic")
+    if(NOT error MATCHES "${expected}")
+        message(FATAL_ERROR "Process missing diagnostic ${expected}\n${error}")
+    endif()
+endforeach()
 
 execute_process(COMMAND "${JOBQ_CLI}" interactive extra
     RESULT_VARIABLE result OUTPUT_VARIABLE output ERROR_VARIABLE error TIMEOUT 10)
