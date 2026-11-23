@@ -101,6 +101,8 @@ default library/CLI builds stay dependency-free. It binds `127.0.0.1:8080` by
 default and owns its own Engine, separate from the CLI process. Applications must
 register real job handlers; standalone storage is in memory. [WebSocket events](docs/http-events.md) stream committed job status changes to connected clients.
 
+The [React dashboard](docs/web-dashboard.md) is a separate application in `dashboard/`. Run it alongside the HTTP server to inspect current snapshots and live job events.
+
 ## Public C++ API
 
 Use `jobq::Engine` to own and coordinate workers, handlers, submissions, and

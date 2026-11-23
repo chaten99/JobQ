@@ -49,6 +49,7 @@ Welcome to the **JobQ** documentation suite. This index links to the architectur
 ---
 
 ## 8. CLI and HTTP Hosts
+- **[Web dashboard](web-dashboard.md):** Local setup, API configuration, and deployment.
 - **[WebSocket events](http-events.md):** Live job transitions, client behavior, backpressure, and reconnection.
 - **[JobQ REST API](http-api.md):** Versioned operations, JSON, validation, pagination/filtering, handler/storage requirements, and error/lifecycle semantics.
 - **[HTTP Server Foundation](http-server.md):** Optional Drogon build, configuration, health endpoints, Engine ownership, and lifecycle/platform limits.
