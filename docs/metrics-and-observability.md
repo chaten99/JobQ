@@ -59,7 +59,7 @@ All time measurements use `std::chrono::steady_clock` to ensure monotonic progre
 | `totalExecutionTime` | `std::chrono::nanoseconds` | Cumulative sum of all completed and failed handler runtimes. |
 | `averageExecutionTime` | `std::chrono::nanoseconds` | $\frac{\text{totalExecutionTime}}{\text{finishedExecutions}}$ (or `0` if `finishedExecutions == 0`). |
 | `elapsedTime` | `std::chrono::nanoseconds` | Monotonic time elapsed since `JobMetrics` was instantiated or started. |
-| `throughputJobsPerSecond` | `double` | $\frac{\text{completedExecutions}}{\text{elapsedTime in seconds}}$ (or `0.0` if `elapsedTime == 0`). |
+| `throughputJobsPerSecond` | `double` | $\frac{\text{finishedExecutions}}{\text{elapsedTime in seconds}}$ (or `0.0` if `elapsedTime == 0`). |
 
 ---
 
@@ -83,7 +83,7 @@ JobQ provides standard-compliant JSON serialization through `jobq::toJson(const 
     "totalExecutionTimeNs": 2500000000,
     "averageExecutionTimeNs": 20833333,
     "elapsedTimeNs": 5000000000,
-    "throughputJobsPerSecond": 18.0
+    "throughputJobsPerSecond": 24.0
   }
 }
 ```

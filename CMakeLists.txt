@@ -186,6 +186,11 @@ target_link_libraries(jobq_cli PRIVATE jobq_cli_runtime)
 
 include(CTest)
 
+option(JOBQ_BUILD_SERVER "Build the Drogon HTTP server" OFF)
+if(JOBQ_BUILD_SERVER)
+    add_subdirectory(server)
+endif()
+
 if(BUILD_TESTING)
 
     add_executable(jobq_cli_end_to_end_test tests/cli_end_to_end_test.cpp)

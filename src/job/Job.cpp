@@ -216,6 +216,7 @@ bool Job::prepareForRetry() {
     }
 
     status_ = JobStatus::Pending;
+    notifyStatusChange(JobStatus::Failed);
 
     return true;
 }
@@ -264,6 +265,15 @@ void Job::transitionTo(
 
     status_ = newStatus;
     attemptsMade_ = nextAttempts;
+    notifyStatusChange(expectedCurrent);
+}
+
+void Job::notifyStatusChange(JobStatus previous) const noexcept {
+    if (!statusListener_) return;
+    try {
+        (*statusListener_)({id_, previous, status_, attemptsMade_});
+    } catch (...) {
+    }
 }
 
 void Job::markRunning() {
