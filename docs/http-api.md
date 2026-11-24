@@ -249,3 +249,31 @@ mapping, pending/running/delayed/failed/retried states, and active-work shutdown
 The Windows subprocess host test captures a returned ID, processes and inspects
 it over HTTP, then verifies shutdown and port release. It uses bounded timeouts
 and reaps its child on failure. Full Debug/Release suites run sequentially.
+
+## Metrics
+
+`GET /api/v1/metrics` returns a read-only snapshot from the server-owned Engine.
+It accepts no query parameters and returns the standard JSON data envelope with
+`Cache-Control: no-store`.
+
+| Field within `data` | Format and meaning |
+| --- | --- |
+| `schema_version` | Integer 1. |
+| `counters.submitted_jobs` | Decimal string for distinct job submissions. |
+| `counters.started_executions` | Decimal string for attempts started. |
+| `counters.completed_executions` | Decimal string for successful attempts. |
+| `counters.failed_executions` | Decimal string for failed attempts, including attempts that will retry. |
+| `counters.scheduled_retries` | Decimal string for successfully queued retries. |
+| `counters.finished_executions` | Decimal string for successful plus failed attempts. |
+| `performance.total_execution_time_ns` | Decimal string for cumulative execution time across finished attempts. |
+| `performance.average_execution_time_ns` | Decimal string for total execution time divided by finished attempts, or zero before any finish. |
+| `performance.elapsed_time_ns` | Decimal string for elapsed steady-clock nanoseconds since the collector was created. |
+| `performance.finished_executions_per_second` | Finite JSON number for lifetime finished attempts per second, or null if non-finite. |
+
+Parse counter and duration strings with a precision-preserving integer type.
+The lifetime rate divides finished attempts by elapsed seconds. The Engine
+retains these metrics in memory and reconstructing it resets them. There is no
+history across restarts. Unsupported query parameters return 400
+`INVALID_REQUEST`, unsupported methods are rejected, and an unavailable or
+stopping Engine returns 503 `ENGINE_UNAVAILABLE`. Unexpected errors use the
+generic internal-error envelope.

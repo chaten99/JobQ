@@ -71,6 +71,8 @@ interface LiveState {
   connection: Connection;
   events: JobEvent[];
   revision: number;
+  manualRevision: number;
+  manualRefresh: () => void;
   generation: number;
   refresh: () => void;
 }
@@ -78,6 +80,8 @@ export const useLive = create<LiveState>((set) => ({
   connection: "disconnected",
   events: [],
   revision: 0,
+  manualRevision: 0,
+  manualRefresh: () => set((state) => ({ revision: state.revision + 1, manualRevision: state.manualRevision + 1 })),
   generation: 0,
   refresh: () => set((state) => ({ revision: state.revision + 1 })),
 }));

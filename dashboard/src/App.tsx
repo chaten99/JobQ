@@ -34,11 +34,14 @@ import { Card } from "@/components/ui/card";
 import { useEventStream, useLive } from "./live";
 import { useQuery } from "./query";
 
+import { MetricsPage } from "./MetricsPage";
+
 const navigation = [
   { to: "/", name: "Overview", icon: LayoutGrid },
   { to: "/jobs", name: "Jobs", icon: List },
   { to: "/queue", name: "Queue", icon: Layers3 },
   { to: "/workers", name: "Workers", icon: Cpu },
+  { to: "/metrics", name: "Metrics", icon: Activity },
   { to: "/events", name: "Events", icon: Activity },
 ];
 
@@ -599,7 +602,7 @@ export function App() {
   useEventStream();
   const health = useQuery(api.ready);
   const connection = useLive((state) => state.connection);
-  const refresh = useLive((state) => state.refresh);
+  const refresh = useLive((state) => state.manualRefresh);
   const { pathname } = useLocation();
   const [menu, setMenu] = useState(false);
   const page =
@@ -681,6 +684,7 @@ export function App() {
             <Route path="/jobs/:id" element={<JobDetail />} />
             <Route path="/queue" element={<QueuePage />} />
             <Route path="/workers" element={<WorkersPage />} />
+            <Route path="/metrics" element={<MetricsPage />} />
             <Route path="/events" element={<EventsPage />} />
             <Route
               path="*"

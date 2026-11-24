@@ -2,6 +2,7 @@
 #include "ServerRuntime.h"
 #include "HealthRoutes.h"
 #include "InspectionRoutes.h"
+#include "MetricsRoutes.h"
 
 #include <future>
 #include <sstream>
@@ -34,7 +35,7 @@ int main()
             jobq::server::ServerContext context(defaults);
             const auto request = drogon::HttpRequest::newHttpRequest();
             const auto unavailable = [&] {
-                for (const auto inspect : {jobq::server::workersResponse, jobq::server::runtimeResponse}) {
+                for (const auto inspect : {jobq::server::workersResponse, jobq::server::runtimeResponse, jobq::server::metricsResponse}) {
                     const auto response = inspect(context, request);
                     if (response->statusCode() != drogon::k503ServiceUnavailable ||
                         (!response->getJsonObject() || (*response->getJsonObject())["error"]["code"] != "ENGINE_UNAVAILABLE")) return false;

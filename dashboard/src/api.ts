@@ -26,6 +26,17 @@ export interface Job {
   payload_bytes: number;
   payload_truncated: boolean;
 }
+export interface Metrics {
+  schema_version: 1;
+  counters: Record<"submitted_jobs" | "started_executions" | "completed_executions" | "failed_executions" | "scheduled_retries" | "finished_executions", string>;
+  performance: {
+    total_execution_time_ns: string;
+    average_execution_time_ns: string;
+    elapsed_time_ns: string;
+    finished_executions_per_second: number | null;
+  };
+}
+
 export interface Queue {
   ready: number;
   delayed: number;
@@ -88,6 +99,7 @@ async function resource<T>(path: string, signal: AbortSignal) {
 }
 
 export const api = {
+  metrics: (signal: AbortSignal) => resource<Metrics>("/api/v1/metrics", signal),
   live: (signal: AbortSignal) =>
     http.get<{ status: "ok" }>("/health/live", { signal }),
   ready: (signal: AbortSignal) =>
