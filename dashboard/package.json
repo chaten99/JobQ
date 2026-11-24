@@ -5,7 +5,8 @@
     "test": "vitest run",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "e2e": "playwright test"
   },
   "type": "module",
   "private": true,
@@ -21,6 +22,7 @@
     "zustand": "5.1.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.65.1",
     "@tailwindcss/vite": "4.3.5",
     "@testing-library/react": "16.3.3",
     "@types/node": "24.19.2",

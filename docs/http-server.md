@@ -2,7 +2,7 @@
 
 `jobq_server` is a separate host for the reusable JobQ Engine. This increment
 provides health endpoints plus the [job and queue REST API](http-api.md).
-The REST API also includes read-only worker pool and runtime snapshots. [WebSocket events](http-events.md) report live job status changes. The [React dashboard](web-dashboard.md) runs as a separate application with its own development server or production static host.
+The REST API also includes read-only worker pool and runtime snapshots. [WebSocket events](http-events.md) report live job status changes. The [metrics endpoint](http-api.md#metrics) exposes current Engine counters and execution timing. The [React dashboard](web-dashboard.md) runs as a separate application with its own development server or production static host.
 
 ## Framework and build
 

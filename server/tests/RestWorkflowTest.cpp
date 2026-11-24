@@ -4,6 +4,8 @@
 #include <drogon/drogon.h>
 #include <drogon/WebSocketClient.h>
 #include <trantor/net/EventLoopThread.h>
+#include <algorithm>
+#include <cmath>
 #include <future>
 #include <sstream>
 #include <thread>
@@ -154,6 +156,41 @@ int main() {
             EventClient eventOne(address, loop.getLoop());
             EventClient eventTwo(address, loop.getLoop());
             if (!eventOne.connect() || !eventTwo.connect()) throw std::runtime_error("WebSocket upgrades failed");
+            auto metrics = [&](const auto& connection) {
+                const auto response = send(drogon::Get, "/api/v1/metrics", "", "application/json", connection);
+                const auto data = parsed(response)["data"];
+                if (response->statusCode() != drogon::k200OK || response->getHeader("cache-control") != "no-store" ||
+                    data["schema_version"].asInt() != 1) throw std::runtime_error("Invalid metrics envelope");
+                const auto counters = data["counters"];
+                const auto performance = data["performance"];
+                for (const auto& name : counters.getMemberNames()) {
+                    const auto value = counters[name].asString();
+                    if (!counters[name].isString() || value.empty() || value.find_first_not_of("0123456789") != std::string::npos)
+                        throw std::runtime_error("Invalid decimal metrics counter");
+                }
+                const auto finished = std::stoull(counters["finished_executions"].asString());
+                if (finished != std::stoull(counters["completed_executions"].asString()) +
+                                std::stoull(counters["failed_executions"].asString()))
+                    throw std::runtime_error("Inconsistent finished execution count");
+                for (const auto* name : {"total_execution_time_ns", "average_execution_time_ns", "elapsed_time_ns"}) {
+                    if (!performance[name].isString())
+                        throw std::runtime_error("Metrics durations must be strings");
+                }
+                const auto total = std::stoull(performance["total_execution_time_ns"].asString());
+                if (std::stoull(performance["average_execution_time_ns"].asString()) != (finished ? total / finished : 0))
+                    throw std::runtime_error("Inconsistent average execution time");
+                const auto rate = performance["finished_executions_per_second"];
+                if (!rate.isNull() && (!rate.isNumeric() || !std::isfinite(rate.asDouble())))
+                    throw std::runtime_error("Invalid metrics rate");
+                return counters;
+            };
+            const auto initial = metrics(http);
+            check(initial.size() == 6 && std::all_of(initial.begin(), initial.end(), [](const auto& value) {
+                return value == "0";
+            }), "All metrics counters start at zero");
+            check(send(drogon::Get, "/api/v1/metrics?extra=1")->statusCode() == drogon::k400BadRequest &&
+                  send(drogon::Post, "/api/v1/metrics")->statusCode() == drogon::k405MethodNotAllowed,
+                  "Metrics rejects query arguments and unsupported methods");
             const auto empty = parsed(send(drogon::Get, "/api/v1/jobs"));
             check(empty["data"].empty() && empty["pagination"]["limit"].asUInt64() == 50,
                   "Real HTTP empty collection uses default pagination");
@@ -194,7 +231,7 @@ int main() {
             }
             auto inspect = [&](const drogon::HttpClientPtr& connection) {
                 for (int index = 0; index < 10; ++index) {
-                    if (!inspectWorkers(connection) || inspectRuntime(connection) < initialUptime) return false;
+                    if (!inspectWorkers(connection) || inspectRuntime(connection) < initialUptime || metrics(connection)["started_executions"] != "2") return false;
                 }
                 return true;
             };
@@ -262,6 +299,13 @@ int main() {
                       "FAILED:PENDING:1", "PENDING:RUNNING:2", "RUNNING:COMPLETED:2"},
                   "Rapid success, failure and retry preserve exact per-job transition order and attempts");
             check(inspectWorkers() && inspectRuntime() > initialUptime, "Uptime advances through the delayed retry workflow");
+            check(jobq_test::waitUntil([&] { return engine->metrics().finishedExecutions == 6; }),
+                  "All pre-shutdown attempts are accounted for");
+            const auto finalMetrics = metrics(http);
+            check(finalMetrics["submitted_jobs"] == "5" && finalMetrics["started_executions"] == "6" &&
+                  finalMetrics["completed_executions"] == "4" && finalMetrics["failed_executions"] == "2" &&
+                  finalMetrics["scheduled_retries"] == "1" && finalMetrics["finished_executions"] == "6",
+                  "Metrics endpoint reports actual successes, failures and queued retries");
             const auto final = submit("FINAL", "drain on shutdown");
             check(finalEntered.waitAtLeast(1), "An accepted final job is active before shutdown");
             runtime.requestStop();

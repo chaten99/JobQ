@@ -70,3 +70,39 @@ represent retry preparation before queue insertion.
 The dashboard is for inspection. It exposes no worker controls, historical
 metrics, or authentication. See the [REST API](http-api.md) and
 [WebSocket contract](http-events.md) for response semantics.
+
+## Metrics and browser testing
+
+The Metrics page shows the Engine's submissions, execution attempts, and queued
+retries alongside cumulative and average execution times. Its lifetime rate
+counts both successful and failed attempts. The success share divides successful
+by finished attempts once at least one attempt finishes.
+
+The chart derives interval rates from the difference in finished attempts divided
+by the change in the Engine's elapsed time. It keeps up to 30 intervals in memory
+while the page is open. Backwards counters or elapsed time clear the history.
+Equal elapsed times produce no point. Requests run one at a time, ten seconds
+after the prior request finishes, while the page is visible. A return to the tab,
+manual refresh, or event-stream reconnect requests a fresh snapshot. Failed
+refreshes preserve the last successful values and show an error.
+
+From the repository root in PowerShell with MSYS2 UCRT64 on PATH:
+
+```powershell
+$env:Path = "C:/msys64/ucrt64/bin;$env:Path"
+cmake -S . -B build/e2e -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=Debug -DJOBQ_BUILD_SERVER=ON -DBUILD_TESTING=ON -DCMAKE_PREFIX_PATH=C:/msys64/ucrt64
+cmake --build build/e2e --target jobq_rest_test_host -j 6
+$env:JOBQ_E2E_HOST = (Resolve-Path build/e2e/server/jobq_rest_test_host.exe).Path
+cd dashboard
+npm ci
+npx playwright install chromium
+npm run e2e
+```
+
+Playwright starts its own test host and Vite on OS-assigned loopback ports.
+No manually started backend is needed. If startup fails, check that
+`JOBQ_E2E_HOST` points to the built executable, UCRT64 runtime DLLs are on PATH,
+and endpoint protection permits the test processes to bind loopback ports.
+The suite tests actual REST and WebSocket traffic through Vite. For a manual
+Vite session the default backend remains port 8080. `JOBQ_PROXY_TARGET` can
+override that destination for an isolated workflow.

@@ -3,6 +3,7 @@
 #include "EventRoutes.h"
 #include "HealthRoutes.h"
 #include "InspectionRoutes.h"
+#include "MetricsRoutes.h"
 #include "ApiRoutes.h"
 
 #include <atomic>
@@ -248,6 +249,7 @@ namespace jobq::server
             registerHealthRoutes(context_);
             registerApiRoutes(context_);
             registerInspectionRoutes(context_);
+            registerMetricsRoutes(context_);
             registerEventRoutes(context_);
             app.setClientMaxWebSocketMessageSize(4096);
             configured = true;
