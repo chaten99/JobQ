@@ -211,3 +211,5 @@ JobQ is engineered for safe multi-threaded concurrency without race conditions:
 | `JobExecutor` | `mutable std::mutex mutex_` | Safe handler registration and execution lookups. |
 | `FileJobStorage` | `std::mutex mutex_` | Serialized disk write operations, preventing interleaved or corrupted journal lines across threads. |
 | `JobMetrics` | `mutable std::mutex mutex_`<br>`std::atomic<uint64_t>` | Thread-safe execution counters, execution duration tracking, and immutable snapshot capture. |
+
+The [distributed backend design](distributed-backend-design.md) defines future shared processing contracts. Current Engine instances and file journals remain process-local.

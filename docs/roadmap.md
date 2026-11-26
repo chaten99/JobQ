@@ -60,11 +60,19 @@ Known reliability limits (at-least-once execution, no `fsync`, no cross-process 
 - [x] 28 automated test suites integrated with CTest.
 - [x] Concurrency stress tests and deterministic latch-based synchronization proofs.
 
+### Stage 13: HTTP API and Web Dashboard
+
+- [x] Optional HTTP server, health and job, queue, worker, runtime and metrics APIs.
+- [x] WebSocket job lifecycle streaming, React dashboard and browser integration tests.
+
 ---
 
 ## 2. In Progress
 
-- No phase is currently in progress.
+### Stage 14: Shared Backend and Distributed Processing
+
+- [x] Framework-independent [backend contracts](distributed-backend-design.md) and deterministic conformance tests.
+- [ ] Production shared backend integration and multi-process execution.
 
 ---
 
@@ -85,12 +93,7 @@ Known reliability limits (at-least-once execution, no `fsync`, no cross-process 
 - [ ] Journal compaction / snapshot vacuuming to prevent unbounded growth of append-only log files.
 - [ ] Dynamic worker pool scaling (resizing active workers at runtime).
 
-### Phase 12: HTTP API & Web Dashboard
-- [ ] Embedded HTTP REST API server for remote job submission and status inspection.
-- [ ] WebSocket streaming of live runtime metrics and worker states.
-- [ ] Modern web dashboard (React / Vite) for visualizing queue throughput, worker health, and failure logs.
-
-### Phase 13: Distributed Queue Backend
+### Remaining Stage 14 increments
 - [ ] Distributed storage and locking adapter (e.g., Redis or Raft-backed cluster).
 - [ ] Multiple independent worker processes consuming from a shared distributed queue.
 - [ ] Heartbeat mechanisms and worker lease timeouts for dead worker detection.
