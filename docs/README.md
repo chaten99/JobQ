@@ -72,3 +72,5 @@ Welcome to the **JobQ** documentation suite. This index links to the architectur
 
 ## 11. Roadmap
 - **[Project Status & Roadmap](roadmap.md):** Implemented capabilities (Phases 1-9) and planned milestones.
+
+The [distributed backend design](distributed-backend-design.md) defines future shared processing contracts. Current Engine instances and file journals remain process-local.

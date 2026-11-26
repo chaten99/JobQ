@@ -116,3 +116,5 @@ These were checked against the source:
 - [Troubleshooting](troubleshooting.md)
 - [Testing Guide](testing.md)
 - [Job Lifecycle](job-lifecycle.md), [Retry System](retry-system.md), [Metrics](metrics-and-observability.md)
+
+The [distributed backend design](distributed-backend-design.md) defines future shared processing contracts. Current Engine instances and file journals remain process-local.

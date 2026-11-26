@@ -192,6 +192,11 @@ if(JOBQ_BUILD_SERVER)
 endif()
 
 if(BUILD_TESTING)
+    add_executable(jobq_backend_contract_test tests/backend/BackendContractTest.cpp)
+    target_link_libraries(jobq_backend_contract_test PRIVATE JobQ::Core)
+    add_test(NAME jobq_backend_contract COMMAND jobq_backend_contract_test)
+    set_tests_properties(jobq_backend_contract PROPERTIES TIMEOUT 30)
+
 
     add_executable(jobq_cli_end_to_end_test tests/cli_end_to_end_test.cpp)
     target_link_libraries(jobq_cli_end_to_end_test PRIVATE jobq_cli_runtime)

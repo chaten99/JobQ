@@ -423,3 +423,5 @@ Detailed technical documentation is available in the [`docs/`](docs/README.md) d
 ## License
 
 This project is licensed under the MIT License.
+
+The [distributed backend design](docs/distributed-backend-design.md) defines future shared processing contracts. Current Engine instances and file journals remain process-local.
