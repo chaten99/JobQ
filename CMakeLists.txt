@@ -186,6 +186,11 @@ target_link_libraries(jobq_cli PRIVATE jobq_cli_runtime)
 
 include(CTest)
 
+option(JOBQ_BUILD_REDIS_BACKEND "Build the optional Boost.Redis transport" OFF)
+if(JOBQ_BUILD_REDIS_BACKEND)
+    add_subdirectory(backend/redis)
+endif()
+
 option(JOBQ_BUILD_SERVER "Build the Drogon HTTP server" OFF)
 if(JOBQ_BUILD_SERVER)
     add_subdirectory(server)

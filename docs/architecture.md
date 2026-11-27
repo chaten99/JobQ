@@ -213,3 +213,5 @@ JobQ is engineered for safe multi-threaded concurrency without race conditions:
 | `JobMetrics` | `mutable std::mutex mutex_`<br>`std::atomic<uint64_t>` | Thread-safe execution counters, execution duration tracking, and immutable snapshot capture. |
 
 The [distributed backend design](distributed-backend-design.md) defines future shared processing contracts. Current Engine instances and file journals remain process-local.
+
+The [optional Redis connectivity module](redis-backend.md) runs independently of the local Engine and its persistence.
