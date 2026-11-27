@@ -24,8 +24,7 @@ flowchart LR
 
 Future CLI and HTTP server configurations will choose a backend, and
 independent worker processes will claim from the same shared scheduler. The
-dashboard will see that shared state through HTTP. Redis connectivity,
-durable shared storage, and multi-process execution are future increments.
+dashboard will see that shared state through HTTP. The [optional Redis transport](redis-backend.md) provides connectivity only. Durable shared storage and multi-process execution are future increments.
 The in-memory fake under `tests/backend` runs only in tests.
 
 ## Public contract

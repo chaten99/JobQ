@@ -118,3 +118,5 @@ These were checked against the source:
 - [Job Lifecycle](job-lifecycle.md), [Retry System](retry-system.md), [Metrics](metrics-and-observability.md)
 
 The [distributed backend design](distributed-backend-design.md) defines future shared processing contracts. Current Engine instances and file journals remain process-local.
+
+The [optional Redis connectivity module](redis-backend.md) runs independently of the local Engine and its persistence.

@@ -74,3 +74,5 @@ Welcome to the **JobQ** documentation suite. This index links to the architectur
 - **[Project Status & Roadmap](roadmap.md):** Implemented capabilities (Phases 1-9) and planned milestones.
 
 The [distributed backend design](distributed-backend-design.md) defines future shared processing contracts. Current Engine instances and file journals remain process-local.
+
+The [optional Redis connectivity module](redis-backend.md) runs independently of the local Engine and its persistence.

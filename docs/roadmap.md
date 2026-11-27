@@ -72,6 +72,7 @@ Known reliability limits (at-least-once execution, no `fsync`, no cross-process 
 ### Stage 14: Shared Backend and Distributed Processing
 
 - [x] Framework-independent [backend contracts](distributed-backend-design.md) and deterministic conformance tests.
+- [ ] [Optional Redis connectivity foundation](redis-backend.md) submitted for review.
 - [ ] Production shared backend integration and multi-process execution.
 
 ---
